@@ -39,7 +39,13 @@ export class Spectrogram {
     }
   }
 
-  draw(freqDataHistory, origFormantsHistory, formantsHistory) {
+  draw(
+    freqDataHistory,
+    origFormantsHistory,
+    formantsHistory,
+    confidencesHistory,
+    drawFilteredFormants,
+  ) {
     const beginIndex = Math.max(0, freqDataHistory.length - this.windowSize);
     const endIndex = freqDataHistory.length;
     const nFrames = endIndex - beginIndex;
@@ -100,7 +106,12 @@ export class Spectrogram {
     this.canvasCtx.putImageData(this.imageData, 0, 0);
 
     // --- Formant lines + dots ---
-    for (const curFormantsHistory of [origFormantsHistory]) {
+    const formantsToDraw = [origFormantsHistory];
+    if (drawFilteredFormants) {
+      formantsToDraw.push(formantsHistory);
+    }
+
+    for (const curFormantsHistory of formantsToDraw) {
       const colors =
         curFormantsHistory === origFormantsHistory
           ? [

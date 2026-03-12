@@ -56,6 +56,12 @@ export default function FormantTracer() {
           className="border-blue-500 border-2"
         />
         <canvas
+          id="spectrogram2"
+          width="640"
+          height="240"
+          className="border-blue-500 border-2"
+        />
+        <canvas
           id="spectrum"
           width="640"
           height="480"
@@ -151,6 +157,9 @@ class FormantApp {
     const spectrogramCanvas = document.getElementById(
       "spectrogram",
     ) as HTMLCanvasElement;
+    const spectrogram2Canvas = document.getElementById(
+      "spectrogram2",
+    ) as HTMLCanvasElement;
 
     const freqBinSize = analyser.frequencyBinCount;
     const freqData = new Float32Array(freqBinSize);
@@ -166,12 +175,14 @@ class FormantApp {
     );
     const spectrum = new Spectrum(specCanvas, fftModule, freqBinSize);
     const spectrogram = new Spectrogram(spectrogramCanvas);
+    const spectrogram2 = new Spectrogram(spectrogram2Canvas);
     const tracker = new FormantTracker();
 
     let curIdx = 0;
     let startTime: number | undefined = undefined;
     const formantsHistory: number[][] = [];
     const origFormantsHistory: number[][] = [];
+    const confidenceHistory: number[][] = [];
     const freqDataHistory: Float32Array[] = [];
 
     const drawRefresh = (timeStamp: number) => {
@@ -221,6 +232,7 @@ class FormantApp {
         const filteredFormants = filterResults.formants;
         const filterConfidence = filterResults.confidence;
         formantsHistory.push(filteredFormants);
+        confidenceHistory.push(filterConfidence);
 
         // console.log("orig", Array.from(formants));
         // console.log("filtered", filteredFormants);
@@ -229,7 +241,20 @@ class FormantApp {
         spectrum.draw(freqData, maxF0, origFormants, logNoiseFloor, sampleRate);
       }
 
-      spectrogram.draw(freqDataHistory, origFormantsHistory, formantsHistory);
+      spectrogram.draw(
+        freqDataHistory,
+        origFormantsHistory,
+        formantsHistory,
+        confidenceHistory,
+        false,
+      );
+      spectrogram2.draw(
+        freqDataHistory,
+        origFormantsHistory,
+        formantsHistory,
+        confidenceHistory,
+        true,
+      );
     };
 
     this.drawRefreshFn = drawRefresh;
