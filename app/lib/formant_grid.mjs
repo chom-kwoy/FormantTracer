@@ -199,13 +199,6 @@ export class FormantGrid {
         continue;
       }
 
-      // Fade via lightness: 50% (vivid) → 92% (nearly background white)
-      const lightness = 92 - fade * 42;
-      const saturation = fade * 80;
-      // off.fillStyle = `hsl(${pt.hue}deg ${saturation}% ${lightness}%)`;
-      // use oklch instead of hsl
-      off.fillStyle = `oklch(${pt.hue}deg ${saturation}% ${lightness}%)`;
-
       // Draw connector to next point
       if (i + 1 < this.trail.length) {
         const next = this.trail[i + 1];
@@ -221,7 +214,7 @@ export class FormantGrid {
         if (disc > 0 && Math.abs(dy) > 0.001) {
           // draw separator line between the two segments
           // the line should be perpendicular to the direction
-          off.strokeStyle = "rgba(255,255,255,0.9)";
+          off.strokeStyle = `rgba(255,255,255,${fade * 0.9})`;
           off.lineWidth = 1.2;
           off.beginPath();
           const len = Math.sqrt(d_sq);

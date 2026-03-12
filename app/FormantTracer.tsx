@@ -11,7 +11,7 @@ export default function FormantTracer() {
     if (!appRef.current) {
       appRef.current = new FormantApp(isMale);
     }
-    appRef.current.toggle(false, "eye_br.mp3");
+    appRef.current.toggle(false, "eye_am.mp3");
   };
 
   return (
