@@ -1,7 +1,9 @@
+import { DeblurredCanvas } from "@/app/lib/types";
+
 import { freqBinSize, sampleRate } from "../constants.js";
 
 export class Spectrogram {
-  private canvas: HTMLCanvasElement;
+  private canvas: DeblurredCanvas;
   private canvasCtx: CanvasRenderingContext2D;
   private width: number;
   private height: number;
@@ -19,7 +21,7 @@ export class Spectrogram {
   private slotX: Float32Array;
   private preemphasis: Float32Array;
 
-  constructor(canvas: HTMLCanvasElement) {
+  constructor(canvas: DeblurredCanvas) {
     this.canvas = canvas;
     this.canvasCtx = canvas.getContext("2d")!;
     this.width = canvas.width;
@@ -29,7 +31,7 @@ export class Spectrogram {
     this.greyLUT = null;
 
     this.windowSize = 300;
-    this.minFreq = 200;
+    this.minFreq = 50;
     this.maxFreq = 5000;
     this.dynamicRange = 70;
     this.nyquist = sampleRate / 2;
@@ -130,6 +132,8 @@ export class Spectrogram {
 
     this.canvasCtx.putImageData(this.imageData, 0, 0);
 
+    const dpr = window.devicePixelRatio;
+
     // --- Formant lines + dots ---
     const formantsToDraw: number[][][] = [origFormantsHistory];
     if (drawFilteredFormants) {
@@ -144,7 +148,8 @@ export class Spectrogram {
       const ctx = this.canvasCtx;
 
       for (let f = 0; f < 3; f++) {
-        ctx.lineWidth = curFormantsHistory === origFormantsHistory ? 2 : 3;
+        ctx.lineWidth =
+          (curFormantsHistory === origFormantsHistory ? 2 : 3) * dpr;
 
         let prevX: number | null = null;
         let prevY: number | null = null;
@@ -221,13 +226,13 @@ export class Spectrogram {
     for (let i = 0; i < otherHistories.length; i++) {
       ctx.strokeStyle = "white";
       ctx.fillStyle = "white";
-      ctx.lineWidth = 6;
+      ctx.lineWidth = 6 * dpr;
       ctx.lineCap = "round";
       drawLine(otherHistories[i], this.width, this.height, this.windowSize);
 
       ctx.strokeStyle = colors[i];
       ctx.fillStyle = colors[i];
-      ctx.lineWidth = 2;
+      ctx.lineWidth = 2 * dpr;
       ctx.lineCap = "round";
       drawLine(otherHistories[i], this.width, this.height, this.windowSize);
     }

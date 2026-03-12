@@ -1,6 +1,7 @@
 import eig from "eigen";
 
 import { FormantTracker } from "@/app/lib/formant_tracker";
+import { DeblurredCanvas, deblurCanvas } from "@/app/lib/types";
 
 import {
   elemsPerWindow,
@@ -14,7 +15,7 @@ import {
 } from "./constants.js";
 import { FormantGrid } from "./lib/formant_grid";
 import { Spectrogram } from "./lib/spectrogram";
-import { Spectrum } from "./lib/spectrum.mjs";
+import { Spectrum } from "./lib/spectrum";
 import { pffft_simd } from "./lib/third_party/pffft.simd.mjs";
 import TripleBuffer from "./lib/triplebuffer.mjs";
 
@@ -24,25 +25,25 @@ export class FormantApp {
   private isPlaying = false;
   private drawRefreshFn: ((ts: number) => void) | null = null;
   private isMale: boolean;
-  private vowelCanvas: HTMLCanvasElement;
-  private spectrumCanvas: HTMLCanvasElement;
-  private spectrogramCanvas: HTMLCanvasElement;
-  private spectrogram2Canvas: HTMLCanvasElement;
+  private vowelCanvas: DeblurredCanvas;
+  private spectrumCanvas: DeblurredCanvas;
+  private spectrogramCanvas: DeblurredCanvas;
+  private spectrogram2Canvas: DeblurredCanvas;
 
   constructor(isMale: boolean) {
     this.isMale = isMale;
-    this.vowelCanvas = document.getElementById(
-      "vowelspace",
-    ) as HTMLCanvasElement;
-    this.spectrumCanvas = document.getElementById(
-      "spectrum",
-    ) as HTMLCanvasElement;
-    this.spectrogramCanvas = document.getElementById(
-      "spectrogram",
-    ) as HTMLCanvasElement;
-    this.spectrogram2Canvas = document.getElementById(
-      "spectrogram2",
-    ) as HTMLCanvasElement;
+    this.vowelCanvas = deblurCanvas(
+      document.getElementById("vowelspace") as HTMLCanvasElement,
+    );
+    this.spectrumCanvas = deblurCanvas(
+      document.getElementById("spectrum") as HTMLCanvasElement,
+    );
+    this.spectrogramCanvas = deblurCanvas(
+      document.getElementById("spectrogram") as HTMLCanvasElement,
+    );
+    this.spectrogram2Canvas = deblurCanvas(
+      document.getElementById("spectrogram2") as HTMLCanvasElement,
+    );
   }
 
   setIsMale(isMale: boolean) {

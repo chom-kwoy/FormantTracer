@@ -1,7 +1,28 @@
+import { pffft_simd } from "@/app/lib/third_party/pffft.simd.mjs";
+import { DeblurredCanvas } from "@/app/lib/types";
+
+type FFTModule = Awaited<ReturnType<typeof pffft_simd>>;
+
 export class Spectrum {
-  constructor(specCanvas, fftModule, freqBinSize) {
+  private canvas: DeblurredCanvas;
+  private canvasCtx: CanvasRenderingContext2D;
+  private fftModule: FFTModule;
+  private freqBinSize: number;
+
+  private pffft_runner: ReturnType<FFTModule["_pffft_runner_new"]>;
+  private dataPtr: ReturnType<FFTModule["_malloc"]>;
+  private dataHeap: Uint8Array;
+
+  constructor(
+    specCanvas: DeblurredCanvas,
+    fftModule: FFTModule,
+    freqBinSize: number,
+  ) {
     this.canvas = specCanvas;
-    this.canvasCtx = specCanvas.getContext("2d");
+    this.canvasCtx = specCanvas.getContext("2d")!;
+
+    const dpr = window.devicePixelRatio;
+    this.canvasCtx.scale(dpr, dpr);
 
     this.fftModule = fftModule;
     this.freqBinSize = freqBinSize;
@@ -15,34 +36,38 @@ export class Spectrum {
     );
   }
 
-  draw(freqData, maxF0, F_filtered, logNoiseFloor, sampleRate) {
+  draw(
+    freqData: Float32Array,
+    maxF0: number,
+    F_filtered: number[],
+    logNoiseFloor: number,
+    sampleRate: number,
+  ) {
+    const w = this.canvas.origWidth;
+    const h = this.canvas.origHeight;
+
     // Clear spectrum canvas
     this.canvasCtx.fillStyle = "rgb(0, 0, 0)";
-    this.canvasCtx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+    this.canvasCtx.fillRect(0, 0, w, h);
 
     // Compute log spectrum
-    let logSpectrum = new Float32Array(this.freqBinSize * 2);
+    const logSpectrum = new Float32Array(this.freqBinSize * 2);
     for (let i = 0; i < this.freqBinSize; ++i) {
-      let value = Math.max(logNoiseFloor, freqData[i]);
+      const value = Math.max(logNoiseFloor, freqData[i]);
       logSpectrum[i * 2] = -(value - logNoiseFloor) / logNoiseFloor;
       logSpectrum[i * 2 + 1] = 0;
     }
 
     // Draw log spectrum
     {
-      const barWidth = this.canvas.width / this.freqBinSize;
+      const barWidth = w / this.freqBinSize;
       let x = 0;
 
       for (let i = 0; i < this.freqBinSize; i++) {
-        const barHeight = logSpectrum[i * 2] * this.canvas.height;
+        const barHeight = logSpectrum[i * 2] * h;
 
         this.canvasCtx.fillStyle = "rgb(255,50,50)";
-        this.canvasCtx.fillRect(
-          x,
-          this.canvas.height - barHeight / 3,
-          barWidth,
-          barHeight / 3,
-        );
+        this.canvasCtx.fillRect(x, h - barHeight / 3, barWidth, barHeight / 3);
 
         x += barWidth;
       }
@@ -50,10 +75,10 @@ export class Spectrum {
       for (let i = 0; i < sampleRate / 2; i += 500) {
         this.canvasCtx.fillStyle = "rgb(255,50,255)";
         this.canvasCtx.fillRect(
-          (i / (sampleRate / 2)) * this.canvas.width,
-          this.canvas.height - this.canvas.height / 3,
+          (i / (sampleRate / 2)) * w,
+          h - h / 3,
           barWidth,
-          this.canvas.height / 3,
+          h / 3,
         );
       }
     }
@@ -90,16 +115,16 @@ export class Spectrum {
 
     // Draw cepstrum
     {
-      const barWidth = this.canvas.width / magnitudes.length;
+      const barWidth = w / magnitudes.length;
       let x = 0;
 
       for (let i = 0; i < magnitudes.length; i++) {
-        const barHeight = Math.min(magnitudes[i] * 50, this.canvas.height);
+        const barHeight = Math.min(magnitudes[i] * 0.05 * h, h);
 
         this.canvasCtx.fillStyle = "rgb(50,50,255)";
         this.canvasCtx.fillRect(
           x,
-          (this.canvas.height * 2) / 3 - barHeight / 3,
+          (h * 2) / 3 - barHeight / 3,
           barWidth,
           barHeight / 3,
         );
@@ -110,9 +135,9 @@ export class Spectrum {
       this.canvasCtx.fillStyle = "rgb(255,50,255)";
       this.canvasCtx.fillRect(
         (barWidth * sampleRate) / maxF0,
-        this.canvas.height / 3,
+        h / 3,
         barWidth,
-        this.canvas.height / 3,
+        h / 3,
       );
     }
 
@@ -124,7 +149,7 @@ export class Spectrum {
       this.pffft_runner,
       this.dataHeap.byteOffset,
     );
-    let ifft_result = new Float32Array(
+    const ifft_result = new Float32Array(
       this.dataHeap.buffer,
       this.dataHeap.byteOffset,
       this.freqBinSize * 2,
@@ -132,23 +157,23 @@ export class Spectrum {
 
     magnitudes = new Array(this.freqBinSize);
     for (let i = 0; i < this.freqBinSize * 2; i += 2) {
-      let a = ifft_result[i] / this.freqBinSize;
-      let b = ifft_result[i + 1] / this.freqBinSize;
+      const a = ifft_result[i] / this.freqBinSize;
+      const b = ifft_result[i + 1] / this.freqBinSize;
       magnitudes[Math.floor(i / 2)] = 2 * (a * a + b * b);
     }
 
     // Draw filtered spectrum
     {
-      const barWidth = this.canvas.width / magnitudes.length;
+      const barWidth = w / magnitudes.length;
       let x = 0;
 
       for (let i = 0; i < magnitudes.length; i++) {
-        const barHeight = magnitudes[i] * 2 * this.canvas.height;
+        const barHeight = magnitudes[i] * 2 * h;
 
         this.canvasCtx.fillStyle = "rgb(200,200,50)";
         this.canvasCtx.fillRect(
           x,
-          this.canvas.height / 3 - barHeight / 3,
+          h / 3 - barHeight / 3,
           barWidth,
           barHeight / 3,
         );
@@ -159,10 +184,10 @@ export class Spectrum {
       for (let i = 0; i <= 2500; i += 500) {
         this.canvasCtx.fillStyle = "rgba(255,255,255,0.8)";
         this.canvasCtx.fillRect(
-          (i / (sampleRate / 2)) * this.canvas.width,
-          this.canvas.height / 3 - this.canvas.height / 3,
+          (i / (sampleRate / 2)) * w,
+          h / 3 - h / 3,
           barWidth,
-          this.canvas.height / 3,
+          h / 3,
         );
       }
 
@@ -173,10 +198,10 @@ export class Spectrum {
           "rgb(50,100,255)",
         ][i];
         this.canvasCtx.fillRect(
-          (F_filtered[i] / (sampleRate / 2)) * this.canvas.width,
-          this.canvas.height / 3 - this.canvas.height / 3,
+          (F_filtered[i] / (sampleRate / 2)) * w,
+          h / 3 - h / 3,
           5,
-          this.canvas.height / 3,
+          h / 3,
         );
       }
     }

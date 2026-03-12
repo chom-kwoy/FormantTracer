@@ -1,3 +1,5 @@
+import { DeblurredCanvas } from "@/app/lib/types";
+
 interface VowelReference {
   vowel: string;
   F1: number;
@@ -34,7 +36,7 @@ const VOWELS: VowelReference[] = [
 type TransformFunction = (x: number) => number;
 
 export class FormantGrid {
-  private vowelCanvas: HTMLCanvasElement;
+  private vowelCanvas: DeblurredCanvas;
   private vowelCanvasCtx: CanvasRenderingContext2D;
   private offCanvas: HTMLCanvasElement;
   private offCtx: CanvasRenderingContext2D;
@@ -51,7 +53,7 @@ export class FormantGrid {
   private decayRate: number;
 
   constructor(
-    vowelCanvas: HTMLCanvasElement,
+    vowelCanvas: DeblurredCanvas,
     f1Min: number,
     f1Max: number,
     f2Min: number,
@@ -62,12 +64,15 @@ export class FormantGrid {
     this.vowelCanvas = vowelCanvas;
     this.vowelCanvasCtx = vowelCanvas.getContext("2d")!;
 
+    const dpr = window.devicePixelRatio;
+    this.vowelCanvasCtx.scale(dpr, dpr);
+
     // Single offscreen canvas for trail
-    const off = document.createElement("canvas");
-    off.width = vowelCanvas.width;
-    off.height = vowelCanvas.height;
-    this.offCanvas = off;
-    this.offCtx = off.getContext("2d")!;
+    this.offCanvas = document.createElement("canvas");
+    this.offCanvas.width = vowelCanvas.origWidth * dpr;
+    this.offCanvas.height = vowelCanvas.origHeight * dpr;
+    this.offCtx = this.offCanvas.getContext("2d")!;
+    this.offCtx.scale(dpr, dpr);
 
     this.transformFunctionF1 = transformFunctionF1;
     this.transformFunctionF2 = transformFunctionF2;
@@ -89,8 +94,8 @@ export class FormantGrid {
     doDraw: boolean = true,
   ): void {
     const ctx = this.vowelCanvasCtx;
-    const w = this.vowelCanvas.width;
-    const h = this.vowelCanvas.height;
+    const w = this.vowelCanvas.origWidth;
+    const h = this.vowelCanvas.origHeight;
     const t1 = this.transformFunctionF1;
     const t2 = this.transformFunctionF2;
 
@@ -238,7 +243,17 @@ export class FormantGrid {
       }
 
       off.globalAlpha = 1.0;
-      ctx.drawImage(this.offCanvas, 0, 0);
+      ctx.drawImage(
+        this.offCanvas,
+        0,
+        0,
+        this.offCanvas.width,
+        this.offCanvas.height,
+        0,
+        0,
+        w,
+        h,
+      );
 
       ctx.save();
       // Draw vowel points
