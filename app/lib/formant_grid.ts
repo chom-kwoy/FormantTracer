@@ -1,4 +1,17 @@
-const VOWELS = [
+interface VowelReference {
+  vowel: string;
+  F1: number;
+  F2: number;
+}
+
+interface TrailPoint {
+  x: number;
+  y: number;
+  r: number;
+  hue: number;
+}
+
+const VOWELS: VowelReference[] = [
   { vowel: "i", F1: 250, F2: 2400 },
   { vowel: "y", F1: 245, F2: 2050 },
   { vowel: "e", F1: 390, F2: 2300 },
@@ -18,25 +31,43 @@ const VOWELS = [
   { vowel: "ɑ", F1: 750, F2: 950 },
 ];
 
+type TransformFunction = (x: number) => number;
+
 export class FormantGrid {
+  private vowelCanvas: HTMLCanvasElement;
+  private vowelCanvasCtx: CanvasRenderingContext2D;
+  private offCanvas: HTMLCanvasElement;
+  private offCtx: CanvasRenderingContext2D;
+
+  private transformFunctionF1: TransformFunction;
+  private transformFunctionF2: TransformFunction;
+  private f1Min: number;
+  private f1Max: number;
+  private f2Min: number;
+  private f2Max: number;
+
+  private trail: (TrailPoint | null)[];
+  private maxTrail: number;
+  private decayRate: number;
+
   constructor(
-    vowelCanvas,
-    f1Min,
-    f1Max,
-    f2Min,
-    f2Max,
-    transformFunctionF1,
-    transformFunctionF2,
+    vowelCanvas: HTMLCanvasElement,
+    f1Min: number,
+    f1Max: number,
+    f2Min: number,
+    f2Max: number,
+    transformFunctionF1: TransformFunction,
+    transformFunctionF2: TransformFunction,
   ) {
     this.vowelCanvas = vowelCanvas;
-    this.vowelCanvasCtx = vowelCanvas.getContext("2d");
+    this.vowelCanvasCtx = vowelCanvas.getContext("2d")!;
 
     // Single offscreen canvas for trail
     const off = document.createElement("canvas");
     off.width = vowelCanvas.width;
     off.height = vowelCanvas.height;
     this.offCanvas = off;
-    this.offCtx = off.getContext("2d");
+    this.offCtx = off.getContext("2d")!;
 
     this.transformFunctionF1 = transformFunctionF1;
     this.transformFunctionF2 = transformFunctionF2;
@@ -51,21 +82,21 @@ export class FormantGrid {
   }
 
   draw(
-    F_filtered,
-    avgAmpl,
-    elapsed,
-    isMale,
-    doDraw = true, // if false, only add a new point
-  ) {
+    F_filtered: number[],
+    avgAmpl: number,
+    elapsed: number,
+    isMale: boolean,
+    doDraw: boolean = true,
+  ): void {
     const ctx = this.vowelCanvasCtx;
     const w = this.vowelCanvas.width;
     const h = this.vowelCanvas.height;
     const t1 = this.transformFunctionF1;
     const t2 = this.transformFunctionF2;
 
-    const f1YCoord = (i) =>
+    const f1YCoord = (i: number): number =>
       ((t1(i) - t1(this.f1Min)) / (t1(this.f1Max) - t1(this.f1Min))) * h;
-    const f2XCoord = (i) =>
+    const f2XCoord = (i: number): number =>
       ((-t2(i) + t2(this.f2Max)) / (t2(this.f2Max) - t2(this.f2Min))) * w;
 
     // --- Add new point to trail ---
@@ -105,14 +136,14 @@ export class FormantGrid {
       ctx.fill();
 
       for (let i = this.f1Min; i < this.f1Max; i += 100) {
-        let y = f1YCoord(i);
-        let th;
+        const y = f1YCoord(i);
+        let th: number;
         if (i % 500 === 0) {
-          ctx.fillStyle = "rgb(60,60,60)";
+          ctx.fillStyle = "rgb(100,100,100)";
           ctx.font = "bold 11px sans-serif";
           th = 2;
         } else {
-          ctx.fillStyle = "rgb(100,100,100)";
+          ctx.fillStyle = "rgb(150,150,150)";
           ctx.font = "10px sans-serif";
           th = 1;
         }
@@ -124,20 +155,19 @@ export class FormantGrid {
         );
       }
       for (let i = this.f2Min; i <= this.f2Max; i += 100) {
-        let x = f2XCoord(i);
-        let th;
-        let doLabel = true;
+        const x = f2XCoord(i);
+        let th: number;
         if (i % 500 === 0) {
-          ctx.fillStyle = "rgb(60,60,60)";
+          ctx.fillStyle = "rgb(100,100,100)";
           ctx.font = "bold 11px sans-serif";
           th = 2;
         } else {
-          ctx.fillStyle = "rgb(100,100,100)";
+          ctx.fillStyle = "rgb(150,150,150)";
           ctx.font = "10px sans-serif";
           th = 1;
         }
-        if (doLabel) {
-          ctx.fillRect(x - th / 2, 0, th, h);
+        ctx.fillRect(x - th / 2, 0, th, h);
+        if (i <= 1500 || i % 500 === 0) {
           ctx.fillText(i === this.f2Min + 100 ? "F2" : `${i}`, x + 1, h - 3);
         }
       }
@@ -149,7 +179,7 @@ export class FormantGrid {
 
       for (let i = 0; i < this.trail.length; i++) {
         const age = this.trail.length - 1 - i;
-        const fade = Math.pow(this.decayRate, age); // 1.0 = newest, 0.0 = oldest
+        const fade = Math.pow(this.decayRate, age);
         if (fade < 0.01) continue;
 
         const pt = this.trail[i];
@@ -196,11 +226,11 @@ export class FormantGrid {
               const len = Math.sqrt(d_sq);
               const px = -dy / len;
               const py = dx / len;
-              const w = prev.r * 0.5;
+              const aw = prev.r * 0.5;
               const a = -3 / Math.sqrt(d_sq);
-              off.moveTo(pt.x + dx * a + px * w, pt.y + dy * a + py * w);
+              off.moveTo(pt.x + dx * a + px * aw, pt.y + dy * a + py * aw);
               off.lineTo(pt.x, pt.y);
-              off.lineTo(pt.x + dx * a - px * w, pt.y + dy * a - py * w);
+              off.lineTo(pt.x + dx * a - px * aw, pt.y + dy * a - py * aw);
               off.stroke();
             }
           }
@@ -218,27 +248,25 @@ export class FormantGrid {
       ctx.lineWidth = 3;
       ctx.strokeStyle = "white";
 
-      for (let { vowel, F1, F2 } of VOWELS) {
+      for (const ref of VOWELS) {
+        let F1 = ref.F1;
+        let F2 = ref.F2;
         if (!isMale) {
-          // Female speakers typically have vocal tracts that are 10% to 15% shorter
           F1 *= 1.12;
           F2 *= 1.12;
         }
         const x = f2XCoord(F2);
         const y = f1YCoord(F1);
 
-        // Draw the red point
         ctx.fillStyle = "rgb(255,0,0)";
         ctx.beginPath();
         ctx.arc(x, y, 2, 0, 2 * Math.PI);
         ctx.fill();
 
-        // Draw the thick black text outline
-        ctx.strokeText(vowel, x + 10, y - 10);
+        ctx.strokeText(ref.vowel, x + 10, y - 10);
 
-        // Draw the dark blue text fill
         ctx.fillStyle = "darkblue";
-        ctx.fillText(vowel, x + 10, y - 10);
+        ctx.fillText(ref.vowel, x + 10, y - 10);
       }
       ctx.restore();
     }

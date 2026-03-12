@@ -12,7 +12,7 @@ import {
   stftInterval,
   windowSize,
 } from "./constants.js";
-import { FormantGrid } from "./lib/formant_grid.mjs";
+import { FormantGrid } from "./lib/formant_grid";
 import { Spectrogram } from "./lib/spectrogram";
 import { Spectrum } from "./lib/spectrum.mjs";
 import { pffft_simd } from "./lib/third_party/pffft.simd.mjs";
