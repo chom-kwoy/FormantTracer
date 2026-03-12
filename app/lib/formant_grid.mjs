@@ -172,7 +172,7 @@ export class FormantGrid {
         const d_sq = dx * dx + dy * dy;
         const disc = rd * rd * dx * dx - d_sq * (rd * rd - dy * dy);
 
-        if (disc > 0 && Math.abs(dy) > 0.001 && pt.r > 3) {
+        if (disc > 0 && Math.abs(dy) > 0.001) {
           const sq = Math.sqrt(disc);
           const a1x = (rd * dx + sq) / d_sq;
           const a1y = (rd - dx * a1x) / dy;
@@ -185,6 +185,52 @@ export class FormantGrid {
           off.lineTo(pt.x - pt.r * a2x, pt.y - pt.r * a2y);
           off.lineTo(next.x - next.r * a2x, next.y - next.r * a2y);
           off.fill();
+        }
+      }
+    }
+
+    for (let i = 0; i < this.trail.length; i++) {
+      const age = this.trail.length - 1 - i;
+      const fade = Math.pow(this.decayRate, age); // 1.0 = newest, 0.0 = oldest
+      if (fade < 0.01) continue;
+
+      const pt = this.trail[i];
+      if (pt === null) {
+        continue;
+      }
+
+      // Fade via lightness: 50% (vivid) → 92% (nearly background white)
+      const lightness = 92 - fade * 42;
+      const saturation = fade * 80;
+      // off.fillStyle = `hsl(${pt.hue}deg ${saturation}% ${lightness}%)`;
+      // use oklch instead of hsl
+      off.fillStyle = `oklch(${pt.hue}deg ${saturation}% ${lightness}%)`;
+
+      // Draw connector to next point
+      if (i + 1 < this.trail.length) {
+        const next = this.trail[i + 1];
+        if (next === null) {
+          continue;
+        }
+        const dx = next.x - pt.x;
+        const dy = next.y - pt.y;
+        const rd = next.r - pt.r;
+        const d_sq = dx * dx + dy * dy;
+        const disc = rd * rd * dx * dx - d_sq * (rd * rd - dy * dy);
+
+        if (disc > 0 && Math.abs(dy) > 0.001) {
+          // draw separator line between the two segments
+          // the line should be perpendicular to the direction
+          off.strokeStyle = "rgba(255,255,255,0.9)";
+          off.lineWidth = 1.2;
+          off.beginPath();
+          const len = Math.sqrt(d_sq);
+          const px = -dy / len;
+          const py = dx / len;
+          const w = next.r * 0.4;
+          off.moveTo(next.x + px * w, next.y + py * w);
+          off.lineTo(next.x - px * w, next.y - py * w);
+          off.stroke();
         }
       }
     }
