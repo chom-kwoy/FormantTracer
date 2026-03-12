@@ -1,12 +1,13 @@
+import eig from "eigen";
+
 import {
   elemsPerWindow,
   formantElemsPerWindow,
   freqBinSize,
-  interval,
   nWindows,
+  stftInterval,
   windowSize,
 } from "../constants.js";
-import eig from "../lib/third_party/eigen.js";
 import { pffft_simd } from "../lib/third_party/pffft.simd.mjs";
 import { analyze } from "./analyze";
 
@@ -83,7 +84,7 @@ class FormantProcessor extends AudioWorkletProcessor {
         this.tripleBufferInitialized &&
         this.librariesInitialized &&
         this.bufferFull &&
-        this.popCount % interval === 0
+        this.popCount % stftInterval === 0
       ) {
         this.processBuffer();
       }

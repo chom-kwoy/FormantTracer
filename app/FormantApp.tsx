@@ -5,13 +5,15 @@ import { FormantTracker } from "@/app/lib/formant_tracker";
 import {
   elemsPerWindow,
   formantElemsPerWindow,
-  interval,
+  logNoiseFloor,
+  maxF0,
   nWindows,
   sampleRate,
+  stftInterval,
   windowSize,
 } from "./constants.js";
 import { FormantGrid } from "./lib/formant_grid.mjs";
-import { Spectrogram } from "./lib/spectrogram.mjs";
+import { Spectrogram } from "./lib/spectrogram";
 import { Spectrum } from "./lib/spectrum.mjs";
 import { pffft_simd } from "./lib/third_party/pffft.simd.mjs";
 import TripleBuffer from "./lib/triplebuffer.mjs";
@@ -22,9 +24,25 @@ export class FormantApp {
   private isPlaying = false;
   private drawRefreshFn: ((ts: number) => void) | null = null;
   private isMale: boolean;
+  private vowelCanvas: HTMLCanvasElement;
+  private spectrumCanvas: HTMLCanvasElement;
+  private spectrogramCanvas: HTMLCanvasElement;
+  private spectrogram2Canvas: HTMLCanvasElement;
 
   constructor(isMale: boolean) {
     this.isMale = isMale;
+    this.vowelCanvas = document.getElementById(
+      "vowelspace",
+    ) as HTMLCanvasElement;
+    this.spectrumCanvas = document.getElementById(
+      "spectrum",
+    ) as HTMLCanvasElement;
+    this.spectrogramCanvas = document.getElementById(
+      "spectrogram",
+    ) as HTMLCanvasElement;
+    this.spectrogram2Canvas = document.getElementById(
+      "spectrogram2",
+    ) as HTMLCanvasElement;
   }
 
   setIsMale(isMale: boolean) {
@@ -57,10 +75,8 @@ export class FormantApp {
     const fftModule = await pffft_simd();
     await eig.ready;
     console.log("FFT window length (s): ", windowSize / sampleRate, "s");
-    console.log("FFT interval (s): ", interval / sampleRate, "s");
+    console.log("FFT interval (s): ", stftInterval / sampleRate, "s");
 
-    const maxF0 = 500;
-    const logNoiseFloor = -120;
     this.audioCtx = new AudioContext({ sampleRate: sampleRate });
 
     // Pre-emphasis filter
@@ -101,26 +117,14 @@ export class FormantApp {
       source.connect(this.audioCtx.destination);
     }
 
-    const vowelCanvas = document.getElementById(
-      "vowelspace",
-    ) as HTMLCanvasElement;
-    const specCanvas = document.getElementById("spectrum") as HTMLCanvasElement;
-    const spectrogramCanvas = document.getElementById(
-      "spectrogram",
-    ) as HTMLCanvasElement;
-    const spectrogram2Canvas = document.getElementById(
-      "spectrogram2",
-    ) as HTMLCanvasElement;
-
     const freqBinSize = analyser.frequencyBinCount;
     const freqData = new Float32Array(freqBinSize);
 
     const barkScale = (x: number) => {
       return (26.81 * x) / (1960 + x) - 0.53;
     };
-
     const vowelSpace = new FormantGrid(
-      vowelCanvas,
+      this.vowelCanvas,
       200, // f1Min
       1100, // f1Max
       500, // f2Min
@@ -128,9 +132,9 @@ export class FormantApp {
       barkScale, // f1 scale
       barkScale, // f2 scale
     );
-    const spectrum = new Spectrum(specCanvas, fftModule, freqBinSize);
-    const spectrogram = new Spectrogram(spectrogramCanvas);
-    const spectrogram2 = new Spectrogram(spectrogram2Canvas);
+    const spectrum = new Spectrum(this.spectrumCanvas, fftModule, freqBinSize);
+    const spectrogram = new Spectrogram(this.spectrogramCanvas);
+    const spectrogram2 = new Spectrogram(this.spectrogram2Canvas);
     const tracker = new FormantTracker();
 
     let curIdx = 0;

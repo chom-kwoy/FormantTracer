@@ -1,3 +1,5 @@
+import eig from "eigen";
+
 import {
   bandwidthThreshold,
   fftSize,
@@ -7,7 +9,6 @@ import {
   sampleRate,
 } from "../constants";
 import { detectF0, fft_mag, formantAnalysis } from "../lib/formant_utils.mjs";
-import eig from "../lib/third_party/eigen.js";
 
 export function analyze(timeData, fftModule) {
   // Check voicing first

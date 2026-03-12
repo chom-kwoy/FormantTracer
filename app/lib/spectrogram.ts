@@ -1,9 +1,27 @@
 import { freqBinSize, sampleRate } from "../constants.js";
 
 export class Spectrogram {
-  constructor(canvas) {
+  private canvas: HTMLCanvasElement;
+  private canvasCtx: CanvasRenderingContext2D;
+  private width: number;
+  private height: number;
+  private imageData: ImageData;
+  private dbBuffer: Float32Array | null;
+  private greyLUT: Uint32Array | null;
+
+  private windowSize: number;
+  private minFreq: number;
+  private maxFreq: number;
+  private dynamicRange: number;
+  private nyquist: number;
+
+  private rowToBin: Float32Array;
+  private slotX: Float32Array;
+  private preemphasis: Float32Array;
+
+  constructor(canvas: HTMLCanvasElement) {
     this.canvas = canvas;
-    this.canvasCtx = canvas.getContext("2d");
+    this.canvasCtx = canvas.getContext("2d")!;
     this.width = canvas.width;
     this.height = canvas.height;
     this.imageData = this.canvasCtx.createImageData(this.width, this.height);
@@ -13,7 +31,7 @@ export class Spectrogram {
     this.windowSize = 300;
     this.minFreq = 200;
     this.maxFreq = 5000;
-    this.dynamicRange = 70; // dB
+    this.dynamicRange = 70;
     this.nyquist = sampleRate / 2;
 
     // Precompute: for each pixel row, which freq bin(s) to sample
@@ -41,19 +59,18 @@ export class Spectrogram {
   }
 
   draw(
-    freqDataHistory,
-    origFormantsHistory,
-    formantsHistory,
-    validityHistory,
-    otherHistories,
-    drawFilteredFormants,
-  ) {
+    freqDataHistory: Float32Array[],
+    origFormantsHistory: number[][],
+    formantsHistory: number[][],
+    validityHistory: number[],
+    otherHistories: number[][],
+    drawFilteredFormants: boolean,
+  ): void {
     const beginIndex = Math.max(0, freqDataHistory.length - this.windowSize);
     const endIndex = freqDataHistory.length;
     const nFrames = endIndex - beginIndex;
 
     // --- Single pass: compute all dB values and find global max ---
-    // Lazily allocate reusable buffer
     if (!this.dbBuffer || this.dbBuffer.length < nFrames * this.height) {
       this.dbBuffer = new Float32Array(nFrames * this.height);
     }
@@ -89,7 +106,6 @@ export class Spectrogram {
 
     // --- Render via Uint32Array (one write per pixel) ---
     const pixels32 = new Uint32Array(this.imageData.data.buffer);
-    // Fill white
     const white = (255 << 24) | (255 << 16) | (255 << 8) | 255;
     pixels32.fill(white);
 
@@ -115,7 +131,7 @@ export class Spectrogram {
     this.canvasCtx.putImageData(this.imageData, 0, 0);
 
     // --- Formant lines + dots ---
-    const formantsToDraw = [origFormantsHistory];
+    const formantsToDraw: number[][][] = [origFormantsHistory];
     if (drawFilteredFormants) {
       formantsToDraw.push(formantsHistory);
     }
@@ -130,8 +146,8 @@ export class Spectrogram {
       for (let f = 0; f < 3; f++) {
         ctx.lineWidth = curFormantsHistory === origFormantsHistory ? 2 : 3;
 
-        let prevX = null,
-          prevY = null;
+        let prevX: number | null = null;
+        let prevY: number | null = null;
 
         for (let i = formantBegin; i < curFormantsHistory.length; i++) {
           const validity = validityHistory[i];
@@ -155,7 +171,7 @@ export class Spectrogram {
             ((freq - this.minFreq) / (this.maxFreq - this.minFreq)) *
               this.height;
 
-          if (prevX !== null) {
+          if (prevX !== null && prevY !== null) {
             ctx.beginPath();
             ctx.moveTo(prevX, prevY);
             ctx.lineTo(x, y);
@@ -171,21 +187,26 @@ export class Spectrogram {
     const colors = ["rgb(0,0,0)", "rgb(50,155,155)", "rgb(155,50,155)"];
     const ctx = this.canvasCtx;
 
-    function draw(history, width, height, windowSize) {
-      const beginIndex = Math.max(0, history.length - windowSize);
-      const endIndex = history.length;
+    const drawLine = (
+      history: number[],
+      width: number,
+      height: number,
+      windowSize: number,
+    ): void => {
+      const beginIdx = Math.max(0, history.length - windowSize);
+      const endIdx = history.length;
       const max = Math.max(1.0, ...history);
       const min = Math.min(0.0, ...history);
       const range = max - min;
 
-      let prevX = null,
-        prevY = null;
-      for (let i = beginIndex; i < endIndex; i++) {
+      let prevX: number | null = null;
+      let prevY: number | null = null;
+      for (let i = beginIdx; i < endIdx; i++) {
         const val = history[i];
-        const x = ((i - beginIndex) * width) / windowSize;
+        const x = ((i - beginIdx) * width) / windowSize;
         const y = height - ((val - min) / range) * height;
 
-        if (prevX !== null) {
+        if (prevX !== null && prevY !== null) {
           ctx.beginPath();
           ctx.moveTo(prevX, prevY);
           ctx.lineTo(x, y);
@@ -195,20 +216,20 @@ export class Spectrogram {
         prevX = x;
         prevY = y;
       }
-    }
+    };
 
     for (let i = 0; i < otherHistories.length; i++) {
       ctx.strokeStyle = "white";
       ctx.fillStyle = "white";
       ctx.lineWidth = 6;
       ctx.lineCap = "round";
-      draw(otherHistories[i], this.width, this.height, this.windowSize);
+      drawLine(otherHistories[i], this.width, this.height, this.windowSize);
 
       ctx.strokeStyle = colors[i];
       ctx.fillStyle = colors[i];
       ctx.lineWidth = 2;
       ctx.lineCap = "round";
-      draw(otherHistories[i], this.width, this.height, this.windowSize);
+      drawLine(otherHistories[i], this.width, this.height, this.windowSize);
     }
   }
 }
