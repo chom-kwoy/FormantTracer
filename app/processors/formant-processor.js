@@ -1,13 +1,17 @@
+import {
+  elemsPerWindow,
+  formantCeiling,
+  formantElemsPerWindow,
+  formantFloor,
+  freqBinSize,
+  interval,
+  nWindows,
+  sampleRate,
+  windowSize,
+} from "../constants.js";
 import eig from "../lib/eigen.js";
 import { fft_mag, formantAnalysis } from "../lib/formant.mjs";
 import { pffft_simd } from "../lib/pffft.simd.mjs";
-
-const sampleRate = 11000;
-const windowSize = 512;
-const nWindows = 64;
-const elemsPerWindow = 8;
-const freqBinSize = windowSize / 2;
-const interval = 64;
 
 class FormantProcessor extends AudioWorkletProcessor {
   constructor() {
@@ -15,7 +19,17 @@ class FormantProcessor extends AudioWorkletProcessor {
     this.buffer = new RingBuffer(windowSize);
     this.formatsBuffer = new RingBuffer(nWindows * elemsPerWindow);
     this.popCount = 0;
+    this.bufferFull = false;
     this.intervalIndex = 0;
+
+    this.gaussianWindow = new Float32Array(windowSize);
+    const sigma = 0.4;
+    for (let i = 0; i < windowSize; ++i) {
+      const n = i - windowSize / 2;
+      this.gaussianWindow[i] = Math.exp(
+        -0.5 * (n / ((sigma * windowSize) / 2)) ** 2,
+      );
+    }
 
     this.tripleBufferInitialized = false;
     this.port.onmessage = (e) => {
@@ -64,6 +78,7 @@ class FormantProcessor extends AudioWorkletProcessor {
     }
     for (let i = 0; i < input.length; ++i) {
       if (this.buffer.num_items() === windowSize) {
+        this.bufferFull = true;
         this.buffer.pop();
         this.popCount++;
       }
@@ -71,7 +86,7 @@ class FormantProcessor extends AudioWorkletProcessor {
       if (
         this.tripleBufferInitialized &&
         this.librariesInitialized &&
-        this.buffer.num_items() === windowSize &&
+        this.bufferFull &&
         this.popCount % interval === 0
       ) {
         this.processBuffer();
@@ -84,7 +99,8 @@ class FormantProcessor extends AudioWorkletProcessor {
   processBuffer() {
     // Copy values from ring buffer into timeData
     for (let i = 0; i < windowSize; ++i) {
-      this.timeData[i] = this.buffer.get(i);
+      // apply gaussian window
+      this.timeData[i] = this.buffer.get(i) * this.gaussianWindow[i];
     }
 
     // Run formant analysis
@@ -102,8 +118,8 @@ class FormantProcessor extends AudioWorkletProcessor {
     // Filter out extreme values and only take F1, F2, and F3
     let F_filtered = [];
     let nFormants = 0;
-    for (let i = 0; i <= F.length && nFormants < 3; ++i) {
-      if (F[i] < 250 || F[i] > 5500) {
+    for (let i = 0; i < F.length && nFormants < 3; ++i) {
+      if (F[i] < formantFloor || F[i] > formantCeiling) {
         continue;
       }
       F_filtered.push(F[i]);
@@ -118,24 +134,25 @@ class FormantProcessor extends AudioWorkletProcessor {
     avgAmpl = Math.sqrt(avgAmpl);
 
     // Push values into buffer
-    {
-      if (this.formatsBuffer.num_items() === nWindows * elemsPerWindow) {
-        // pop elemsPerWindow elements
-        for (let i = 0; i < elemsPerWindow; ++i) {
-          this.formatsBuffer.pop();
-        }
+    if (this.formatsBuffer.num_items() === nWindows * elemsPerWindow) {
+      // pop elemsPerWindow elements
+      for (let i = 0; i < elemsPerWindow; ++i) {
+        this.formatsBuffer.pop();
       }
-
-      // push avgAmpl, nFormants, F_filtered[0], F_filtered[1], F_filtered[2]
-      this.formatsBuffer.put(this.intervalIndex);
-      this.formatsBuffer.put(avgAmpl);
-      this.formatsBuffer.put(nFormants);
-      for (let i = 0; i < nFormants; ++i) {
-        this.formatsBuffer.put(F_filtered[i]);
-      }
-      for (let i = 0; i < elemsPerWindow - nFormants - 3; ++i) {
-        this.formatsBuffer.put(0);
-      }
+    }
+    // push avgAmpl, nFormants, F_filtered[0], F_filtered[1], F_filtered[2]
+    this.formatsBuffer.put(this.intervalIndex);
+    this.formatsBuffer.put(avgAmpl);
+    this.formatsBuffer.put(nFormants);
+    for (let i = 0; i < nFormants; ++i) {
+      this.formatsBuffer.put(F_filtered[i]);
+    }
+    for (let i = 0; i < formantElemsPerWindow - nFormants - 3; ++i) {
+      this.formatsBuffer.put(0);
+    }
+    // Push spectrum into buffer
+    for (let i = 0; i < freqBinSize; ++i) {
+      this.formatsBuffer.put(spectrum[i]);
     }
 
     // copy values into in-progress buffer

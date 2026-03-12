@@ -4,7 +4,7 @@ export class Spectrogram {
     this.canvasCtx = canvas.getContext("2d");
   }
 
-  draw(formantsHistory) {
+  draw(freqDataHistory, formantsHistory) {
     // Clear spectrum canvas
     this.canvasCtx.fillStyle = "rgb(0, 0, 0)";
     this.canvasCtx.fillRect(0, 0, this.canvas.width, this.canvas.height);

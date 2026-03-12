@@ -1,6 +1,14 @@
 "use client";
 import eig from "eigen";
 
+import {
+  elemsPerWindow,
+  formantElemsPerWindow,
+  interval,
+  nWindows,
+  sampleRate,
+  windowSize,
+} from "./constants.js";
 import { FormantGrid } from "./lib/formant_grid.mjs";
 import { KalmanFilter } from "./lib/kalman.mjs";
 import { pffft_simd } from "./lib/pffft.simd.mjs";
@@ -10,11 +18,11 @@ import TripleBuffer from "./lib/triplebuffer.mjs";
 
 export default function Formant() {
   return (
-    <div>
-      <header className="flex items-center justify-between p-4">
+    <div className="bg-gray-100">
+      <header className="flex items-center justify-between p-4 bg-blue-500 text-white mb-1">
         <h1>Vowel Tracer</h1>
       </header>
-      <div className="flex justify-center items-center space-x-4">
+      <div className="flex justify-center items-center space-x-4 m-1">
         <button
           className="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded"
           onClick={() => start()}
@@ -22,7 +30,8 @@ export default function Formant() {
           Start
         </button>
       </div>
-      <div>
+      {/* vertically stacked canvas elements */}
+      <div className="flex flex-col items-center">
         <canvas
           id="vowelspace"
           width="640"
@@ -50,18 +59,14 @@ async function start() {
   console.log("start");
   const fftModule = await pffft_simd();
   await eig.ready;
-  console.log(fftModule);
+  console.log("FFT window length (s): ", windowSize / sampleRate, "s");
+  console.log("FFT interval (s): ", interval / sampleRate, "s");
 
-  const sampleRate = 11000;
   const maxF0 = 500;
   const logNoiseFloor = -120;
-  const windowSize = 512;
   const useMic = false;
   const audioCtx = new AudioContext({ sampleRate: sampleRate });
-  const filePath = "little prince.mp3"; //'kawuy.mp3'; // 'problematic.wav';
-
-  const nWindows = 64;
-  const elemsPerWindow = 8;
+  const filePath = "kawuy.mp3"; //"little prince.mp3"; // 'problematic.wav';
 
   // Set up the different audio nodes we will use for the app
 
@@ -103,11 +108,11 @@ async function start() {
   } else {
     setupSample(audioCtx, filePath).then((sample) => {
       const source = playSourceNode(audioCtx, sample);
-      source.connect(formantNode);
-      formantNode.connect(iirfilter);
+      source.connect(iirfilter);
+      iirfilter.connect(formantNode);
       iirfilter.connect(analyser);
 
-      formantNode.connect(audioCtx.destination);
+      source.connect(audioCtx.destination);
 
       visualize();
     });
@@ -124,10 +129,10 @@ async function start() {
     // Buffers
     const freqData = new Float32Array(freqBinSize);
 
-    const f1Min = 250;
-    const f1Max = 1500;
+    const f1Min = 200;
+    const f1Max = 900;
     const f2Min = 500;
-    const f2Max = 4000;
+    const f2Max = 2500;
     const t = logScale ? Math.log : (x: number) => x;
 
     const vowelSpace = new FormantGrid(
@@ -145,6 +150,7 @@ async function start() {
     let curIdx = 0;
     let startTime: number | undefined = undefined;
     const formantsHistory: Float32Array[] = [];
+    const freqDataHistory: Float32Array[] = [];
     const drawRefresh = (timeStamp: number) => {
       requestAnimationFrame(drawRefresh);
 
@@ -170,7 +176,18 @@ async function start() {
             const formants = arr.slice(offset + 3, offset + 3 + nFormants);
             newAvgAmpls.push(avgAmpl);
             newFormants.push(formants);
+            const freqDataSlice = arr.slice(
+              offset + formantElemsPerWindow,
+              offset + elemsPerWindow,
+            );
+            freqDataHistory.push(freqDataSlice);
             curIdx++;
+          } else {
+            if (formantIdx > curIdx) {
+              console.error(
+                `Formant index mismatch: expected ${curIdx}, got ${formantIdx}`,
+              );
+            }
           }
         }
       });
@@ -195,7 +212,11 @@ async function start() {
         spectrum.draw(freqData, maxF0, formants, logNoiseFloor, sampleRate);
       }
 
-      spectrogram.draw(formantsHistory);
+      console.log(freqDataHistory.length);
+      if (Math.ceil(freqDataHistory.length / 10) === 20) {
+        console.log(freqDataHistory);
+      }
+      spectrogram.draw(freqDataHistory, formantsHistory);
     };
 
     requestAnimationFrame(drawRefresh);
