@@ -1,5 +1,6 @@
 "use client";
 import eig from "eigen";
+import { useRef } from "react";
 
 import { FormantTracker } from "@/app/lib/formant_tracker";
 
@@ -18,6 +19,15 @@ import { Spectrum } from "./lib/spectrum.mjs";
 import TripleBuffer from "./lib/triplebuffer.mjs";
 
 export default function Formant() {
+  const appRef = useRef<FormantApp | null>(null);
+
+  const handleClick = () => {
+    if (!appRef.current) {
+      appRef.current = new FormantApp();
+    }
+    appRef.current.toggle();
+  };
+
   return (
     <div className="bg-gray-100">
       <header className="flex items-center justify-between p-4 bg-blue-500 text-white mb-1">
@@ -25,124 +35,132 @@ export default function Formant() {
       </header>
       <div className="flex justify-center items-center space-x-4 m-1">
         <button
+          id="startBtn"
           className="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded"
-          onClick={() => start()}
+          onClick={handleClick}
         >
           Start
         </button>
       </div>
-      {/* vertically stacked canvas elements */}
       <div className="flex flex-col items-center">
         <canvas
           id="vowelspace"
           width="640"
           height="480"
           className="border-blue-500 border-2"
-        ></canvas>
+        />
         <canvas
           id="spectrogram"
           width="640"
           height="240"
           className="border-blue-500 border-2"
-        ></canvas>
+        />
         <canvas
           id="spectrum"
           width="640"
           height="480"
           className="border-blue-500 border-2"
-        ></canvas>
+        />
       </div>
     </div>
   );
 }
 
-async function start() {
-  console.log("start");
-  const fftModule = await pffft_simd();
-  await eig.ready;
-  console.log("FFT window length (s): ", windowSize / sampleRate, "s");
-  console.log("FFT interval (s): ", interval / sampleRate, "s");
+class FormantApp {
+  private audioCtx: AudioContext | null = null;
+  private animFrameId: number | null = null;
+  private isPlaying = false;
+  private drawRefreshFn: ((ts: number) => void) | null = null;
 
-  const maxF0 = 500;
-  const logNoiseFloor = -120;
-  const useMic = false;
-  const audioCtx = new AudioContext({ sampleRate: sampleRate });
-  const filePath = "kawuy.mp3"; //"little prince.mp3"; // 'problematic.wav';
+  async toggle() {
+    const btn = document.getElementById("startBtn") as HTMLButtonElement;
 
-  // Set up the different audio nodes we will use for the app
+    if (!this.isPlaying) {
+      if (!this.audioCtx) {
+        await this.start();
+      } else {
+        await this.audioCtx.resume();
+        if (this.drawRefreshFn)
+          this.animFrameId = requestAnimationFrame(this.drawRefreshFn);
+      }
+      this.isPlaying = true;
+      btn.textContent = "Pause";
+    } else {
+      if (this.audioCtx) await this.audioCtx.suspend();
+      if (this.animFrameId !== null) cancelAnimationFrame(this.animFrameId);
+      this.animFrameId = null;
+      this.isPlaying = false;
+      btn.textContent = "Resume";
+    }
+  }
 
-  // Pre-emphasis filter
-  const iirfilter = audioCtx.createIIRFilter(
-    [1.0, -0.97184404666301134449],
-    [1.0, 0.0],
-  );
+  private async start() {
+    const fftModule = await pffft_simd();
+    await eig.ready;
+    console.log("FFT window length (s): ", windowSize / sampleRate, "s");
+    console.log("FFT interval (s): ", interval / sampleRate, "s");
 
-  const analyser = audioCtx.createAnalyser();
-  analyser.fftSize = windowSize;
-  analyser.smoothingTimeConstant = 0.9;
+    const maxF0 = 500;
+    const logNoiseFloor = -120;
+    this.audioCtx = new AudioContext({ sampleRate: sampleRate });
+    const filePath = "kawuy.mp3";
 
-  await audioCtx.audioWorklet.addModule("processors/formant-processor.js");
-  const formantNode = new AudioWorkletNode(audioCtx, "FormantProcessor");
-  const tripleBuffer = new TripleBuffer(1 + nWindows * elemsPerWindow);
-  formantNode.port.postMessage(tripleBuffer.tripleBuffer);
+    const iirfilter = this.audioCtx.createIIRFilter(
+      [1.0, -0.97184404666301134449],
+      [1.0, 0.0],
+    );
 
-  // Main block for doing the audio recording
-  const constraints = {
-    audio: {
-      autoGainControl: false,
-      echoCancellation: false,
-      noiseSuppression: false,
-      sampleRate: sampleRate,
-    },
-  };
+    const analyser = this.audioCtx.createAnalyser();
+    analyser.fftSize = windowSize;
+    analyser.smoothingTimeConstant = 0.9;
 
-  if (useMic) {
-    navigator.mediaDevices.getUserMedia(constraints).then((stream) => {
-      const source = audioCtx.createMediaStreamSource(stream);
-      //source.connect(audioCtx.destination);
+    await this.audioCtx.audioWorklet.addModule(
+      "processors/formant-processor.js",
+    );
+    const formantNode = new AudioWorkletNode(this.audioCtx, "FormantProcessor");
+    const tripleBuffer = new TripleBuffer(1 + nWindows * elemsPerWindow);
+    formantNode.port.postMessage(tripleBuffer.tripleBuffer);
 
+    const useMic = false;
+    if (useMic) {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          autoGainControl: false,
+          echoCancellation: false,
+          noiseSuppression: false,
+          sampleRate: sampleRate,
+        },
+      });
+      const source = this.audioCtx.createMediaStreamSource(stream);
       source.connect(iirfilter);
       iirfilter.connect(analyser);
-
-      visualize();
-    });
-  } else {
-    setupSample(audioCtx, filePath).then((sample) => {
-      const source = playSourceNode(audioCtx, sample);
+    } else {
+      const sample = await setupSample(this.audioCtx, filePath);
+      const source = playSourceNode(this.audioCtx, sample);
       source.connect(iirfilter);
       iirfilter.connect(formantNode);
       iirfilter.connect(analyser);
+      source.connect(this.audioCtx.destination);
+    }
 
-      source.connect(audioCtx.destination);
+    const vowelCanvas = document.getElementById(
+      "vowelspace",
+    ) as HTMLCanvasElement;
+    const specCanvas = document.getElementById("spectrum") as HTMLCanvasElement;
+    const spectrogramCanvas = document.getElementById(
+      "spectrogram",
+    ) as HTMLCanvasElement;
 
-      visualize();
-    });
-  }
-
-  // Setup vowel space canvas
-  const vowelCanvas = document.getElementById("vowelspace");
-  const specCanvas = document.getElementById("spectrum");
-  const spectrogramCanvas = document.getElementById("spectrogram");
-
-  function visualize(logScale = true) {
-    const freqBinSize = analyser.frequencyBinCount; // half of windowSize
-
-    // Buffers
+    const freqBinSize = analyser.frequencyBinCount;
     const freqData = new Float32Array(freqBinSize);
-
-    const f1Min = 200;
-    const f1Max = 900;
-    const f2Min = 500;
-    const f2Max = 2500;
-    const t = logScale ? Math.log : (x: number) => x;
 
     const vowelSpace = new FormantGrid(
       vowelCanvas,
-      f1Min,
-      f1Max,
-      f2Min,
-      f2Max,
-      t,
+      200,
+      900,
+      500,
+      2500,
+      Math.log,
     );
     const spectrum = new Spectrum(specCanvas, fftModule, freqBinSize);
     const spectrogram = new Spectrogram(spectrogramCanvas);
@@ -152,25 +170,30 @@ async function start() {
     let startTime: number | undefined = undefined;
     const formantsHistory: Float32Array[] = [];
     const freqDataHistory: Float32Array[] = [];
-    const drawRefresh = (timeStamp: number) => {
-      requestAnimationFrame(drawRefresh);
 
-      if (startTime === undefined) {
-        startTime = timeStamp;
-      }
+    const drawRefresh = (timeStamp: number) => {
+      this.animFrameId = requestAnimationFrame(drawRefresh);
+
+      if (startTime === undefined) startTime = timeStamp;
       const elapsed = timeStamp - startTime;
 
-      // Retrieve audio data
-      analyser.getFloatFrequencyData(freqData); // -inf to 0.0
+      analyser.getFloatFrequencyData(freqData);
 
       const newAvgAmpls: number[] = [];
       const newFormants: Float32Array[] = [];
       tripleBuffer.consume((arr: Float32Array) => {
-        // copy buffer content to timeData
         const numElems = arr[0];
         for (let i = 0; i < numElems / elemsPerWindow; ++i) {
           const offset = 1 + i * elemsPerWindow;
           const formantIdx = arr[offset];
+
+          if (formantIdx > curIdx) {
+            console.warn(
+              `Skipped ${formantIdx - curIdx} frames (${curIdx} -> ${formantIdx})`,
+            );
+            curIdx = formantIdx;
+          }
+
           if (formantIdx === curIdx) {
             const avgAmpl = arr[offset + 1];
             const nFormants = arr[offset + 2];
@@ -183,28 +206,15 @@ async function start() {
             );
             freqDataHistory.push(freqDataSlice);
             curIdx++;
-          } else {
-            if (formantIdx > curIdx) {
-              console.error(
-                `Formant index mismatch: expected ${curIdx}, got ${formantIdx}`,
-              );
-            }
           }
         }
       });
 
       for (let i = 0; i < newAvgAmpls.length; ++i) {
-        const avgAmpl = newAvgAmpls[i];
         const formants = newFormants[i];
-
-        // Kalman filter
         const filteredFormants = tracker.update(Array.from(formants));
         formantsHistory.push(newFormants[i]);
-        // formantsHistory.push(filteredFormants);
-        console.log("newformants", Array.from(newFormants[i]));
-        console.log("filtered", filteredFormants);
-
-        vowelSpace.draw(filteredFormants, avgAmpl, elapsed);
+        vowelSpace.draw(filteredFormants, newAvgAmpls[i], elapsed);
         spectrum.draw(
           freqData,
           maxF0,
@@ -214,14 +224,11 @@ async function start() {
         );
       }
 
-      console.log(freqDataHistory.length);
-      if (Math.ceil(freqDataHistory.length / 10) === 20) {
-        console.log(freqDataHistory);
-      }
       spectrogram.draw(freqDataHistory, formantsHistory);
     };
 
-    requestAnimationFrame(drawRefresh);
+    this.drawRefreshFn = drawRefresh;
+    this.animFrameId = requestAnimationFrame(drawRefresh);
   }
 }
 
