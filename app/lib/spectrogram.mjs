@@ -44,7 +44,11 @@ export class Spectrogram {
     origFormantsHistory,
     formantsHistory,
     confidencesHistory,
+    formantErrorsHistory,
+    voicingCoeffsHistory,
+    f0sHistory,
     drawFilteredFormants,
+    drawOtherData,
   ) {
     const beginIndex = Math.max(0, freqDataHistory.length - this.windowSize);
     const endIndex = freqDataHistory.length;
@@ -154,6 +158,57 @@ export class Spectrogram {
           prevX = x;
           prevY = y;
         }
+      }
+    }
+
+    if (drawOtherData) {
+      const histories = [
+        formantErrorsHistory,
+        voicingCoeffsHistory,
+        // f0sHistory,
+      ];
+      const colors = ["rgb(150,50,50)", "rgb(50,155,155)", "rgb(155,50,155)"];
+      const ctx = this.canvasCtx;
+
+      function draw(history, width, height, windowSize) {
+        const beginIndex = Math.max(0, history.length - windowSize);
+        const endIndex = history.length;
+        const max = Math.max(...history);
+        if (history === formantErrorsHistory) console.log(max);
+        const min = Math.min(...history);
+        const range = max - min;
+
+        let prevX = null,
+          prevY = null;
+        for (let i = beginIndex; i < endIndex; i++) {
+          const val = history[i];
+          const x = ((i - beginIndex) * width) / windowSize;
+          const y = height - ((val - min) / range) * height;
+
+          if (prevX !== null) {
+            ctx.beginPath();
+            ctx.moveTo(prevX, prevY);
+            ctx.lineTo(x, y);
+            ctx.stroke();
+          }
+
+          prevX = x;
+          prevY = y;
+        }
+      }
+
+      for (let i = 0; i < histories.length; i++) {
+        ctx.strokeStyle = "white";
+        ctx.fillStyle = "white";
+        ctx.lineWidth = 6;
+        ctx.lineCap = "round";
+        draw(histories[i], this.width, this.height, this.windowSize);
+
+        ctx.strokeStyle = colors[i];
+        ctx.fillStyle = colors[i];
+        ctx.lineWidth = 2;
+        ctx.lineCap = "round";
+        draw(histories[i], this.width, this.height, this.windowSize);
       }
     }
   }

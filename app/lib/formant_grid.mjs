@@ -5,7 +5,7 @@ const VOWELS = [
   { vowel: "ø", F1: 370, F2: 1900 },
   { vowel: "ɛ", F1: 610, F2: 1900 },
   { vowel: "œ", F1: 590, F2: 1710 },
-  { vowel: "a", F1: 850, F2: 1650 },
+  { vowel: "a", F1: 850, F2: 1610 },
   { vowel: "ɶ", F1: 810, F2: 1550 },
 
   { vowel: "u", F1: 250, F2: 550 },
@@ -50,7 +50,7 @@ export class FormantGrid {
     this.decayRate = 0.998;
   }
 
-  draw(F_filtered, avgAmpl, elapsed) {
+  draw(F_filtered, avgAmpl, elapsed, isMale) {
     const ctx = this.vowelCanvasCtx;
     const w = this.vowelCanvas.width;
     const h = this.vowelCanvas.height;
@@ -103,42 +103,16 @@ export class FormantGrid {
         ctx.fillStyle = "rgb(60,60,60)";
         ctx.font = "bold 11px sans-serif";
         th = 2;
-      } else if (i < 2500) {
+      } else {
         ctx.fillStyle = "rgb(100,100,100)";
         ctx.font = "10px sans-serif";
         th = 1;
-      } else {
-        doLabel = false;
       }
       if (doLabel) {
         ctx.fillRect(x - th / 2, 0, th, h);
         ctx.fillText(i === this.f2Min + 100 ? "F2" : `${i}`, x + 1, h - 3);
       }
     }
-
-    ctx.save();
-    // Draw vowel points
-    ctx.font = "italic 15px sans-serif";
-    ctx.textAlign = "center";
-    ctx.textBaseline = "middle";
-    ctx.lineWidth = 1;
-    ctx.strokeStyle = "black";
-
-    for (const { vowel, F1, F2 } of VOWELS) {
-      const x = f2XCoord(F2);
-      const y = f1YCoord(F1);
-
-      // Draw the red point
-      ctx.fillStyle = "rgb(255,0,0)";
-      ctx.beginPath();
-      ctx.arc(x, y, 2, 0, 2 * Math.PI);
-      ctx.fill();
-
-      // Draw the dark blue text fill
-      ctx.fillStyle = "darkblue";
-      ctx.fillText(vowel, x + 10, y - 10);
-    }
-    ctx.restore();
 
     // --- Add new point to trail ---
     if (F_filtered.length >= 2) {
@@ -209,5 +183,37 @@ export class FormantGrid {
 
     off.globalAlpha = 1.0;
     ctx.drawImage(this.offCanvas, 0, 0);
+
+    ctx.save();
+    // Draw vowel points
+    ctx.font = "italic 15px sans-serif";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = "white";
+
+    for (let { vowel, F1, F2 } of VOWELS) {
+      if (!isMale) {
+        // Female speakers typically have vocal tracts that are 10% to 15% shorter
+        F1 *= 1.12;
+        F2 *= 1.12;
+      }
+      const x = f2XCoord(F2);
+      const y = f1YCoord(F1);
+
+      // Draw the red point
+      ctx.fillStyle = "rgb(255,0,0)";
+      ctx.beginPath();
+      ctx.arc(x, y, 2, 0, 2 * Math.PI);
+      ctx.fill();
+
+      // Draw the thick black text outline
+      ctx.strokeText(vowel, x + 10, y - 10);
+
+      // Draw the dark blue text fill
+      ctx.fillStyle = "darkblue";
+      ctx.fillText(vowel, x + 10, y - 10);
+    }
+    ctx.restore();
   }
 }

@@ -75,7 +75,7 @@ function levinson(acf, nPoles) {
 
   a = Float32Array.from([1.0, ...a]);
 
-  return [a, v];
+  return [a, v / acf[0]];
 }
 
 export function formantAnalysis(
@@ -180,4 +180,45 @@ export function fft_mag(x, fftModule, minSize = 0) {
   fftModule._pffft_runner_destroy(pffft_runner);
 
   return [magnitudes, N, M];
+}
+
+export function detectF0(timeData, sampleRate) {
+  const N = timeData.length;
+
+  // Expected pitch range: 75–500 Hz
+  const minLag = Math.floor(sampleRate / 500); // ~22 samples at 11kHz
+  const maxLag = Math.floor(sampleRate / 75); // ~146 samples at 11kHz
+
+  // Compute energy
+  let energy = 0;
+  for (let i = 0; i < N; i++) {
+    energy += timeData[i] * timeData[i];
+  }
+
+  if (energy < 1e-10) return [false, 0]; // silence
+
+  // Find peak in normalized autocorrelation within pitch range
+  let bestCorr = -1;
+  let bestLag = 0;
+
+  for (let lag = minLag; lag <= maxLag && lag < N; lag++) {
+    let num = 0;
+    let den1 = 0;
+    let den2 = 0;
+    for (let i = 0; i < N - lag; i++) {
+      num += timeData[i] * timeData[i + lag];
+      den1 += timeData[i] * timeData[i];
+      den2 += timeData[i + lag] * timeData[i + lag];
+    }
+    const corr = num / Math.sqrt(den1 * den2 + 1e-20);
+
+    if (corr > bestCorr) {
+      bestCorr = corr;
+      bestLag = lag;
+    }
+  }
+
+  const f0 = sampleRate / bestLag;
+
+  return [bestCorr, f0];
 }

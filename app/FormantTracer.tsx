@@ -1,6 +1,6 @@
 "use client";
 import eig from "eigen";
-import { useRef } from "react";
+import { useRef, useState } from "react";
 
 import { FormantTracker } from "@/app/lib/formant_tracker";
 
@@ -13,17 +13,18 @@ import {
   windowSize,
 } from "./constants.js";
 import { FormantGrid } from "./lib/formant_grid.mjs";
-import { pffft_simd } from "./lib/pffft.simd.mjs";
 import { Spectrogram } from "./lib/spectrogram.mjs";
 import { Spectrum } from "./lib/spectrum.mjs";
+import { pffft_simd } from "./lib/third_party/pffft.simd.mjs";
 import TripleBuffer from "./lib/triplebuffer.mjs";
 
 export default function FormantTracer() {
   const appRef = useRef<FormantApp | null>(null);
+  const [isMale, setIsMale] = useState<boolean>(true);
 
   const handleClick = () => {
     if (!appRef.current) {
-      appRef.current = new FormantApp();
+      appRef.current = new FormantApp(isMale);
     }
     appRef.current.toggle();
   };
@@ -34,6 +35,17 @@ export default function FormantTracer() {
         <h1 className="text-xl font-bold">Vowel Tracer</h1>
       </header>
       <div className="flex justify-center items-center space-x-4 m-1">
+        <button
+          className="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded"
+          onClick={() => {
+            setIsMale(!isMale);
+            if (appRef.current) {
+              appRef.current.setIsMale(!isMale);
+            }
+          }}
+        >
+          {isMale ? "Male" : "Female"}
+        </button>
         <button className="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded">
           Open File...
         </button>
@@ -92,6 +104,15 @@ class FormantApp {
   private animFrameId: number | null = null;
   private isPlaying = false;
   private drawRefreshFn: ((ts: number) => void) | null = null;
+  private isMale: boolean;
+
+  constructor(isMale: boolean) {
+    this.isMale = isMale;
+  }
+
+  setIsMale(isMale: boolean) {
+    this.isMale = isMale;
+  }
 
   async toggle() {
     const btn = document.getElementById("startBtn") as HTMLButtonElement;
@@ -124,7 +145,7 @@ class FormantApp {
     const maxF0 = 500;
     const logNoiseFloor = -120;
     this.audioCtx = new AudioContext({ sampleRate: sampleRate });
-    const filePath = "uysa.mp3";
+    const filePath = "kawuy_male.mp3";
     // const filePath = "problematic.wav";
 
     const iirfilter = this.audioCtx.createIIRFilter(
@@ -184,7 +205,7 @@ class FormantApp {
       200, // f1Min
       1100, // f1Max
       500, // f2Min
-      2500, // f2Max
+      2700, // f2Max
       Math.log, // f1 scale
       (x: number) => x, // f2 scale
     );
@@ -198,6 +219,9 @@ class FormantApp {
     const formantsHistory: number[][] = [];
     const origFormantsHistory: number[][] = [];
     const confidenceHistory: number[][] = [];
+    const formantErrorsHistory: number[] = [];
+    const voicingCoeffsHistory: number[] = [];
+    const f0sHistory: number[] = [];
     const freqDataHistory: Float32Array[] = [];
 
     const drawRefresh = (timeStamp: number) => {
@@ -209,12 +233,17 @@ class FormantApp {
       analyser.getFloatFrequencyData(freqData);
 
       const newAvgAmpls: number[] = [];
-      const newFormants: Float32Array[] = [];
+      const newFormants: number[][] = [];
+
+      // retrieve latest data from triple buffer
       tripleBuffer.consume((arr: Float32Array) => {
         const numElems = arr[0];
         for (let i = 0; i < numElems / elemsPerWindow; ++i) {
           const offset = 1 + i * elemsPerWindow;
-          const formantIdx = arr[offset];
+          const curPart = Array.from(
+            arr.slice(offset, offset + formantElemsPerWindow),
+          );
+          const formantIdx = curPart.shift()!;
 
           if (formantIdx > curIdx) {
             console.warn(
@@ -224,11 +253,23 @@ class FormantApp {
           }
 
           if (formantIdx === curIdx) {
-            const avgAmpl = arr[offset + 1];
-            const nFormants = arr[offset + 2];
-            const formants = arr.slice(offset + 3, offset + 3 + nFormants);
+            // extract values from the buffer
+            const avgAmpl = curPart.shift()!;
             newAvgAmpls.push(avgAmpl);
+
+            const formantError = curPart.shift()!;
+            formantErrorsHistory.push(formantError);
+
+            const voicing = curPart.shift()!;
+            voicingCoeffsHistory.push(voicing);
+
+            const f0 = curPart.shift()!;
+            f0sHistory.push(f0);
+
+            const nFormants = curPart.shift()!;
+            const formants = curPart.slice(0, nFormants);
             newFormants.push(formants);
+
             const freqDataSlice = arr.slice(
               offset + formantElemsPerWindow,
               offset + elemsPerWindow,
@@ -240,7 +281,7 @@ class FormantApp {
       });
 
       for (let i = 0; i < newAvgAmpls.length; ++i) {
-        const origFormants = Array.from(newFormants[i]);
+        const origFormants = newFormants[i];
         origFormantsHistory.push(origFormants);
 
         const filterResults = tracker.update(origFormants);
@@ -252,7 +293,7 @@ class FormantApp {
         // console.log("orig", Array.from(formants));
         // console.log("filtered", filteredFormants);
 
-        vowelSpace.draw(filteredFormants, newAvgAmpls[i], elapsed);
+        vowelSpace.draw(filteredFormants, newAvgAmpls[i], elapsed, this.isMale);
         spectrum.draw(
           freqData,
           maxF0,
@@ -267,14 +308,22 @@ class FormantApp {
         origFormantsHistory,
         formantsHistory,
         confidenceHistory,
+        formantErrorsHistory,
+        voicingCoeffsHistory,
+        f0sHistory,
         false,
+        true,
       );
       spectrogram2.draw(
         freqDataHistory,
         origFormantsHistory,
         formantsHistory,
         confidenceHistory,
+        formantErrorsHistory,
+        voicingCoeffsHistory,
+        f0sHistory,
         true,
+        false,
       );
     };
 

@@ -157,7 +157,7 @@ export class Spectrum {
       }
 
       for (let i = 0; i <= 2500; i += 500) {
-        this.canvasCtx.fillStyle = "rgb(255,255,255)";
+        this.canvasCtx.fillStyle = "rgba(255,255,255,0.8)";
         this.canvasCtx.fillRect(
           (i / (sampleRate / 2)) * this.canvas.width,
           this.canvas.height / 3 - this.canvas.height / 3,

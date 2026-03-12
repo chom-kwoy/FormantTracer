@@ -12,9 +12,9 @@ import {
   sampleRate,
   windowSize,
 } from "../constants.js";
-import eig from "../lib/eigen.js";
-import { fft_mag, formantAnalysis } from "../lib/formant.mjs";
-import { pffft_simd } from "../lib/pffft.simd.mjs";
+import { detectF0, fft_mag, formantAnalysis } from "../lib/formant.mjs";
+import eig from "../lib/third_party/eigen.js";
+import { pffft_simd } from "../lib/third_party/pffft.simd.mjs";
 
 class FormantProcessor extends AudioWorkletProcessor {
   constructor() {
@@ -105,8 +105,11 @@ class FormantProcessor extends AudioWorkletProcessor {
       this.timeData[i] = this.buffer.get(i) * this.gaussianWindow[i];
     }
 
+    // Check voicing first
+    const [voicing, f0] = detectF0(this.timeData, sampleRate);
+
     // Run formant analysis
-    let [spectrum, _, M] = fft_mag(
+    let [spectrum, N, M] = fft_mag(
       Array.from(this.timeData), // expects a regular array
       this.fftModule,
       fftSize,
@@ -147,14 +150,18 @@ class FormantProcessor extends AudioWorkletProcessor {
         this.formatsBuffer.pop();
       }
     }
-    // push avgAmpl, nFormants, F_filtered[0], F_filtered[1], F_filtered[2]
+    // push [avgAmpl, formantError, voicing, f0,
+    //       nFormants, F_filtered[0], F_filtered[1], F_filtered[2]]
     this.formatsBuffer.put(this.intervalIndex);
     this.formatsBuffer.put(avgAmpl);
+    this.formatsBuffer.put(formantError);
+    this.formatsBuffer.put(voicing);
+    this.formatsBuffer.put(f0);
     this.formatsBuffer.put(nFormants);
     for (let i = 0; i < nFormants; ++i) {
       this.formatsBuffer.put(F_filtered[i]);
     }
-    for (let i = 0; i < formantElemsPerWindow - nFormants - 3; ++i) {
+    for (let i = 0; i < formantElemsPerWindow - (nFormants + 6); ++i) {
       this.formatsBuffer.put(0);
     }
     // Push spectrum into buffer
@@ -169,6 +176,9 @@ class FormantProcessor extends AudioWorkletProcessor {
         out[i + 1] = this.formatsBuffer.get(i);
       }
     });
+
+    // delete allocated memory
+    // eig.GC.flush();
 
     this.intervalIndex++;
   }
