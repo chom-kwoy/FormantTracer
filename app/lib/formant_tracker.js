@@ -2,11 +2,13 @@ export class FormantTracker {
   constructor() {
     this.state = null;
     this.variance = null;
+    this.smoothed = null;
+    this.smoothing = 0.5; // 0 = no smoothing, higher = more smooth
 
     this.priors = [
-      { center: 550, var: 300 * 300 },
-      { center: 1600, var: 500 * 500 },
-      { center: 2700, var: 500 * 500 },
+      { center: 550, var: 500 * 500 },
+      { center: 1600, var: 1000 * 1000 },
+      { center: 2700, var: 1000 * 1000 },
     ];
 
     this.processNoise = [3000, 5000, 5000];
@@ -16,24 +18,35 @@ export class FormantTracker {
     this.maxVariance = 500 * 500;
   }
 
+  _smooth(result) {
+    if (this.smoothed === null) {
+      this.smoothed = [...result];
+    } else {
+      for (let t = 0; t < 3; t++) {
+        if (result[t] !== null) {
+          this.smoothed[t] =
+            this.smoothing * this.smoothed[t] +
+            (1 - this.smoothing) * result[t];
+        }
+      }
+    }
+    return [...this.smoothed];
+  }
+
   update(formants) {
     if (this.state === null) {
-      return this._initialize(formants);
+      const init = this._initialize(formants);
+      init.formants = this._smooth(init.formants);
+      return init;
     }
 
     // --- Predict step ---
-    // As variance grows, blend prediction toward prior center.
-    // This is the key fix: after a pause, tracks relax toward
-    // expected ranges instead of staying stuck at stale values.
     const predicted = new Array(3);
     const predVar = new Array(3);
     for (let t = 0; t < 3; t++) {
       const v = this.variance[t] + this.processNoise[t];
       predVar[t] = v;
 
-      // How much to trust the prior vs the last state
-      // At low variance (confident), priorBlend ≈ 0 (trust last state)
-      // At high variance (after gaps), priorBlend → 1 (trust prior)
       const priorBlend = v / (v + this.priors[t].var);
       predicted[t] =
         (1 - priorBlend) * this.state[t] + priorBlend * this.priors[t].center;
@@ -43,21 +56,28 @@ export class FormantTracker {
     if (predVar.every((v) => v > this.maxVariance)) {
       this.state = null;
       this.variance = null;
-      return this._initialize(formants);
+      this.smoothed = null;
+      const init = this._initialize(formants);
+      init.formants = this._smooth(init.formants);
+      return init;
     }
 
-    // No observations — just update state to prediction and return
+    // No observations — coast on prediction
     if (formants.length === 0) {
       this.state = predicted;
       this.variance = predVar;
-      return [null, null, null];
+      return {
+        formants: this._smooth(predicted),
+        confidence: predVar.map(
+          (v, t) => this.priors[t].var / (v + this.priors[t].var),
+        ),
+      };
     }
 
     // --- Assignment ---
     const best = this._bestAssignment(formants, predicted, predVar);
 
     // --- Update step ---
-    const result = [null, null, null];
     const newState = [...predicted];
     const newVar = [...predVar];
 
@@ -69,17 +89,22 @@ export class FormantTracker {
         const K = predVar[t] / S;
         newState[t] = predicted[t] + K * (z - predicted[t]);
         newVar[t] = (1 - K) * predVar[t];
-        result[t] = newState[t];
       }
     }
 
     this.state = newState;
     this.variance = newVar;
 
-    return result;
+    return {
+      formants: this._smooth(newState),
+      confidence: newVar.map(
+        (v, t) => this.priors[t].var / (v + this.priors[t].var),
+      ),
+    };
   }
 
   _bestAssignment(formants, predicted, predVar) {
+    const N = formants.length;
     const options = [null, ...formants.map((_, i) => i)];
 
     let bestScore = -Infinity;
@@ -93,8 +118,6 @@ export class FormantTracker {
 
           const assignment = [a0, a1, a2];
           if (!this._checkOrdering(formants, assignment)) continue;
-
-          // Require at least 1 assignment — don't allow all-null
           if (a0 === null && a1 === null && a2 === null) continue;
 
           const score = this._scoreAssignment(
@@ -137,32 +160,32 @@ export class FormantTracker {
         const z = formants[obsIdx];
         const S = predVar[t] + this.measureNoise[t];
 
-        // Innovation log-likelihood
         const innovation = z - predicted[t];
         score += (-0.5 * (innovation * innovation)) / S - 0.5 * Math.log(S);
 
-        // Prior pull
         const priorDist = z - this.priors[t].center;
         score -=
           (this.priorWeight * (priorDist * priorDist)) / this.priors[t].var;
       } else {
-        // Scale missing penalty by confidence — if we're uncertain anyway,
-        // missing is less surprising; if we're confident, missing is costly
         const confidence =
           this.priors[t].var / (predVar[t] + this.priors[t].var);
         score -= this.missingPenalty * (0.5 + 0.5 * confidence);
       }
     }
 
-    // Bonus for more assignments — prefer explaining observations
     let nAssigned = assignment.filter((a) => a !== null).length;
-    score += nAssigned * 8;
+    score += nAssigned * 2;
 
     return score;
   }
 
   _initialize(formants) {
-    if (formants.length < 2) return [null, null, null];
+    const empty = {
+      formants: [null, null, null],
+      confidence: [0, 0, 0],
+    };
+
+    if (formants.length < 2) return empty;
 
     const options = [null, ...formants.map((_, i) => i)];
 
@@ -200,6 +223,8 @@ export class FormantTracker {
       }
     }
 
+    if (bestAssignment.every((a) => a === null)) return empty;
+
     this.state = [
       this.priors[0].center,
       this.priors[1].center,
@@ -211,7 +236,7 @@ export class FormantTracker {
       this.priors[2].var,
     ];
 
-    const result = [null, null, null];
+    const result = [...this.state];
     for (let t = 0; t < 3; t++) {
       if (bestAssignment[t] !== null) {
         const z = formants[bestAssignment[t]];
@@ -223,6 +248,11 @@ export class FormantTracker {
       }
     }
 
-    return result;
+    return {
+      formants: result,
+      confidence: this.variance.map(
+        (v, t) => this.priors[t].var / (v + this.priors[t].var),
+      ),
+    };
   }
 }

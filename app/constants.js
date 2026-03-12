@@ -1,5 +1,5 @@
 export const sampleRate = 11000;
-export const windowSize = 256;
+export const windowSize = 512;
 export const fftSize = 1024;
 export const nWindows = 64;
 export const freqBinSize = fftSize / 2;

@@ -103,7 +103,7 @@ class FormantApp {
     const maxF0 = 500;
     const logNoiseFloor = -120;
     this.audioCtx = new AudioContext({ sampleRate: sampleRate });
-    const filePath = "kawuy.mp3";
+    const filePath = "uysa.mp3";
     // const filePath = "problematic.wav";
 
     const iirfilter = this.audioCtx.createIIRFilter(
@@ -161,7 +161,8 @@ class FormantApp {
       900, // f1Max
       500, // f2Min
       2500, // f2Max
-      Math.log,
+      Math.log, // f1 scale
+      (x: number) => x, // f2 scale
     );
     const spectrum = new Spectrum(specCanvas, fftModule, freqBinSize);
     const spectrogram = new Spectrogram(spectrogramCanvas);
@@ -213,19 +214,19 @@ class FormantApp {
       });
 
       for (let i = 0; i < newAvgAmpls.length; ++i) {
-        const formants = Array.from(newFormants[i]);
-        origFormantsHistory.push(formants);
+        const origFormants = Array.from(newFormants[i]);
+        origFormantsHistory.push(origFormants);
 
-        const filteredFormants = tracker.update(
-          formants,
-        ) as unknown as number[];
+        const filterResults = tracker.update(origFormants);
+        const filteredFormants = filterResults.formants;
+        const filterConfidence = filterResults.confidence;
         formantsHistory.push(filteredFormants);
 
         // console.log("orig", Array.from(formants));
         // console.log("filtered", filteredFormants);
 
         vowelSpace.draw(filteredFormants, newAvgAmpls[i], elapsed);
-        spectrum.draw(freqData, maxF0, formants, logNoiseFloor, sampleRate);
+        spectrum.draw(freqData, maxF0, origFormants, logNoiseFloor, sampleRate);
       }
 
       spectrogram.draw(freqDataHistory, origFormantsHistory, formantsHistory);

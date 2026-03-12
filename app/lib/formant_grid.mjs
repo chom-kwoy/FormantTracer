@@ -1,5 +1,33 @@
+const VOWELS = [
+  { vowel: "i", F1: 250, F2: 2400 },
+  { vowel: "y", F1: 245, F2: 2050 },
+  { vowel: "e", F1: 390, F2: 2300 },
+  { vowel: "ø", F1: 370, F2: 1900 },
+  { vowel: "ɛ", F1: 610, F2: 1900 },
+  { vowel: "œ", F1: 590, F2: 1710 },
+  { vowel: "a", F1: 850, F2: 1600 },
+  { vowel: "ɶ", F1: 810, F2: 1550 },
+
+  { vowel: "u", F1: 250, F2: 550 },
+  { vowel: "ɯ", F1: 300, F2: 1500 },
+  { vowel: "o", F1: 350, F2: 650 },
+  { vowel: "ɤ", F1: 460, F2: 1300 },
+  { vowel: "ɔ", F1: 500, F2: 700 },
+  { vowel: "ʌ", F1: 600, F2: 1200 },
+  { vowel: "ɒ", F1: 700, F2: 750 },
+  { vowel: "ɑ", F1: 750, F2: 950 },
+];
+
 export class FormantGrid {
-  constructor(vowelCanvas, f1Min, f1Max, f2Min, f2Max, transformFunction) {
+  constructor(
+    vowelCanvas,
+    f1Min,
+    f1Max,
+    f2Min,
+    f2Max,
+    transformFunctionF1,
+    transformFunctionF2,
+  ) {
     this.vowelCanvas = vowelCanvas;
     this.vowelCanvasCtx = vowelCanvas.getContext("2d");
 
@@ -10,7 +38,8 @@ export class FormantGrid {
     this.offCanvas = off;
     this.offCtx = off.getContext("2d");
 
-    this.transformFunction = transformFunction;
+    this.transformFunctionF1 = transformFunctionF1;
+    this.transformFunctionF2 = transformFunctionF2;
     this.f1Min = f1Min;
     this.f1Max = f1Max;
     this.f2Min = f2Min;
@@ -18,23 +47,24 @@ export class FormantGrid {
 
     this.trail = [];
     this.maxTrail = 300;
-    this.decayRate = 0.98;
+    this.decayRate = 0.998;
   }
 
   draw(F_filtered, avgAmpl, elapsed) {
     const ctx = this.vowelCanvasCtx;
     const w = this.vowelCanvas.width;
     const h = this.vowelCanvas.height;
-    const t = this.transformFunction;
+    const t1 = this.transformFunctionF1;
+    const t2 = this.transformFunctionF2;
 
     // --- Draw grid (unchanged) ---
     ctx.fillStyle = "rgb(240,240,240)";
     ctx.fillRect(0, 0, w, h);
 
     const f1YCoord = (i) =>
-      ((t(i) - t(this.f1Min)) / (t(this.f1Max) - t(this.f1Min))) * h;
+      ((t1(i) - t1(this.f1Min)) / (t1(this.f1Max) - t1(this.f1Min))) * h;
     const f2XCoord = (i) =>
-      ((-t(i) + t(this.f2Max)) / (t(this.f2Max) - t(this.f2Min))) * w;
+      ((-t2(i) + t2(this.f2Max)) / (t2(this.f2Max) - t2(this.f2Min))) * w;
 
     ctx.fillStyle = "rgb(230,230,230)";
     ctx.beginPath();
@@ -79,14 +109,26 @@ export class FormantGrid {
       }
     }
 
+    // Draw vowel points
+    ctx.fillStyle = "rgb(255,0,0)";
+    ctx.beginPath();
+    for (const { vowel, F1, F2 } of VOWELS) {
+      const x = f2XCoord(F2);
+      const y = f1YCoord(F1);
+      ctx.moveTo(x, y);
+      ctx.arc(x, y, 2, 0, 2 * Math.PI);
+      ctx.fillText(vowel, x + 1, y - 1);
+    }
+
     // --- Add new point to trail ---
     if (F_filtered.length >= 2) {
       const x =
-        ((-t(F_filtered[1]) + t(this.f2Max)) /
-          (t(this.f2Max) - t(this.f2Min))) *
+        ((-t2(F_filtered[1]) + t2(this.f2Max)) /
+          (t2(this.f2Max) - t2(this.f2Min))) *
         w;
       const y =
-        ((t(F_filtered[0]) - t(this.f1Min)) / (t(this.f1Max) - t(this.f1Min))) *
+        ((t1(F_filtered[0]) - t1(this.f1Min)) /
+          (t1(this.f1Max) - t1(this.f1Min))) *
         h;
       const r = Math.sqrt(Math.max(1, 20 * (3 + Math.log10(avgAmpl))));
       const hue = elapsed * 0.2;

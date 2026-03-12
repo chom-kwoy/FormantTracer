@@ -100,11 +100,15 @@ export class Spectrogram {
     this.canvasCtx.putImageData(this.imageData, 0, 0);
 
     // --- Formant lines + dots ---
-    for (const curFormantsHistory of [origFormantsHistory, formantsHistory]) {
+    for (const curFormantsHistory of [origFormantsHistory]) {
       const colors =
         curFormantsHistory === origFormantsHistory
-          ? ["rgb(255,50,50)", "rgb(50,255,50)", "rgb(50,100,255)"]
-          : ["rgb(255,150,150)", "rgb(150,255,150)", "rgb(150,200,255)"];
+          ? [
+              "rgba(255,50,50,0.5)",
+              "rgba(50,255,50,0.5)",
+              "rgba(50,100,255,0.5)",
+            ]
+          : ["rgb(255,50,50)", "rgb(50,255,50)", "rgb(50,100,255)"];
       const formantBegin = Math.max(
         0,
         curFormantsHistory.length - this.windowSize,
@@ -114,26 +118,13 @@ export class Spectrogram {
       for (let f = 0; f < 3; f++) {
         ctx.strokeStyle = colors[f];
         ctx.fillStyle = colors[f];
-        ctx.lineWidth = curFormantsHistory === origFormantsHistory ? 1 : 3;
+        ctx.lineWidth = curFormantsHistory === origFormantsHistory ? 2 : 3;
 
         let prevX = null,
           prevY = null;
 
         for (let i = formantBegin; i < curFormantsHistory.length; i++) {
           const formants = curFormantsHistory[i];
-          if (formants[f] == null) {
-            if (
-              prevX !== null &&
-              (i === formantBegin + 1 || curFormantsHistory[i - 2]?.[f] == null)
-            ) {
-              ctx.beginPath();
-              ctx.ellipse(prevX, prevY, 3, 3, 0, 0, 2 * Math.PI);
-              ctx.fill();
-            }
-            prevX = null;
-            prevY = null;
-            continue;
-          }
 
           const freq = formants[f];
           const x = ((i - formantBegin) * this.width) / this.windowSize;
@@ -151,18 +142,6 @@ export class Spectrogram {
 
           prevX = x;
           prevY = y;
-        }
-
-        if (prevX !== null) {
-          const len = curFormantsHistory.length;
-          if (
-            len - formantBegin < 2 ||
-            curFormantsHistory[len - 2]?.[f] == null
-          ) {
-            ctx.beginPath();
-            ctx.ellipse(prevX, prevY, 3, 3, 0, 0, 2 * Math.PI);
-            ctx.fill();
-          }
         }
       }
     }
