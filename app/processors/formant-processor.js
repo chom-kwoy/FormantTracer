@@ -1,4 +1,5 @@
 import {
+  bandwidthThreshold,
   elemsPerWindow,
   fftSize,
   formantCeiling,
@@ -6,6 +7,7 @@ import {
   formantFloor,
   freqBinSize,
   interval,
+  lpcNumPoles,
   nWindows,
   sampleRate,
   windowSize,
@@ -113,8 +115,9 @@ class FormantProcessor extends AudioWorkletProcessor {
       spectrum,
       freqBinSize * 2,
       freqBinSize * 2,
-      10,
+      lpcNumPoles,
       sampleRate,
+      bandwidthThreshold,
       eig,
       this.fftModule,
     );

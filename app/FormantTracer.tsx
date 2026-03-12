@@ -18,7 +18,7 @@ import { Spectrogram } from "./lib/spectrogram.mjs";
 import { Spectrum } from "./lib/spectrum.mjs";
 import TripleBuffer from "./lib/triplebuffer.mjs";
 
-export default function Formant() {
+export default function FormantTracer() {
   const appRef = useRef<FormantApp | null>(null);
 
   const handleClick = () => {
@@ -104,6 +104,7 @@ class FormantApp {
     const logNoiseFloor = -120;
     this.audioCtx = new AudioContext({ sampleRate: sampleRate });
     const filePath = "kawuy.mp3";
+    // const filePath = "problematic.wav";
 
     const iirfilter = this.audioCtx.createIIRFilter(
       [1.0, -0.97184404666301134449],
@@ -156,10 +157,10 @@ class FormantApp {
 
     const vowelSpace = new FormantGrid(
       vowelCanvas,
-      200,
-      900,
-      500,
-      2500,
+      200, // f1Min
+      900, // f1Max
+      500, // f2Min
+      2500, // f2Max
       Math.log,
     );
     const spectrum = new Spectrum(specCanvas, fftModule, freqBinSize);
@@ -168,7 +169,8 @@ class FormantApp {
 
     let curIdx = 0;
     let startTime: number | undefined = undefined;
-    const formantsHistory: Float32Array[] = [];
+    const formantsHistory: number[][] = [];
+    const origFormantsHistory: number[][] = [];
     const freqDataHistory: Float32Array[] = [];
 
     const drawRefresh = (timeStamp: number) => {
@@ -211,20 +213,22 @@ class FormantApp {
       });
 
       for (let i = 0; i < newAvgAmpls.length; ++i) {
-        const formants = newFormants[i];
-        const filteredFormants = tracker.update(Array.from(formants));
-        formantsHistory.push(newFormants[i]);
+        const formants = Array.from(newFormants[i]);
+        origFormantsHistory.push(formants);
+
+        const filteredFormants = tracker.update(
+          formants,
+        ) as unknown as number[];
+        formantsHistory.push(filteredFormants);
+
+        // console.log("orig", Array.from(formants));
+        // console.log("filtered", filteredFormants);
+
         vowelSpace.draw(filteredFormants, newAvgAmpls[i], elapsed);
-        spectrum.draw(
-          freqData,
-          maxF0,
-          filteredFormants,
-          logNoiseFloor,
-          sampleRate,
-        );
+        spectrum.draw(freqData, maxF0, formants, logNoiseFloor, sampleRate);
       }
 
-      spectrogram.draw(freqDataHistory, formantsHistory);
+      spectrogram.draw(freqDataHistory, origFormantsHistory, formantsHistory);
     };
 
     this.drawRefreshFn = drawRefresh;

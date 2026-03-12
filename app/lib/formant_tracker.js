@@ -1,127 +1,228 @@
 export class FormantTracker {
   constructor() {
-    this.f1 = null;
-    this.f2 = null;
-    this.f3 = null;
-    this.maxJump = 200;
-    this.smooth = 0.7;
-    this.missCount = 0;
-    this.resetAfter = 5; // reset after this many consecutive misses
+    this.state = null;
+    this.variance = null;
+
     this.priors = [
-      { center: 550, width: 300 },
-      { center: 1600, width: 500 },
-      { center: 2700, width: 500 },
+      { center: 550, var: 300 * 300 },
+      { center: 1600, var: 500 * 500 },
+      { center: 2700, var: 500 * 500 },
     ];
-    this.priorWeight = 0.3;
+
+    this.processNoise = [3000, 5000, 5000];
+    this.measureNoise = [2500, 4000, 5000];
+    this.missingPenalty = 12;
+    this.priorWeight = 0.002;
+    this.maxVariance = 500 * 500;
   }
 
   update(formants) {
-    if (formants.length < 3) {
-      this.missCount++;
-      if (this.missCount >= this.resetAfter) {
-        this.f1 = null;
-        this.f2 = null;
-        this.f3 = null;
-      }
-      return [this.f1, this.f2, this.f3];
-    }
-
-    if (this.f1 === null) {
-      this.missCount = 0;
+    if (this.state === null) {
       return this._initialize(formants);
     }
 
-    let bestF1 = null,
-      bestF2 = null,
-      bestF3 = null;
-    let bestCost = Infinity;
-    const tracks = [this.f1, this.f2, this.f3];
+    // --- Predict step ---
+    // As variance grows, blend prediction toward prior center.
+    // This is the key fix: after a pause, tracks relax toward
+    // expected ranges instead of staying stuck at stale values.
+    const predicted = new Array(3);
+    const predVar = new Array(3);
+    for (let t = 0; t < 3; t++) {
+      const v = this.variance[t] + this.processNoise[t];
+      predVar[t] = v;
 
-    for (let i = 0; i < formants.length; i++) {
-      for (let j = i + 1; j < formants.length; j++) {
-        for (let k = j + 1; k < formants.length; k++) {
-          const candidates = [formants[i], formants[j], formants[k]];
+      // How much to trust the prior vs the last state
+      // At low variance (confident), priorBlend ≈ 0 (trust last state)
+      // At high variance (after gaps), priorBlend → 1 (trust prior)
+      const priorBlend = v / (v + this.priors[t].var);
+      predicted[t] =
+        (1 - priorBlend) * this.state[t] + priorBlend * this.priors[t].center;
+    }
 
-          let contCost =
-            Math.abs(candidates[0] - tracks[0]) +
-            Math.abs(candidates[1] - tracks[1]) +
-            Math.abs(candidates[2] - tracks[2]);
+    // Reset if all tracks have diverged
+    if (predVar.every((v) => v > this.maxVariance)) {
+      this.state = null;
+      this.variance = null;
+      return this._initialize(formants);
+    }
 
-          let priorCost = 0;
-          for (let n = 0; n < 3; n++) {
-            priorCost +=
-              Math.abs(candidates[n] - this.priors[n].center) /
-              this.priors[n].width;
-          }
+    // No observations — just update state to prediction and return
+    if (formants.length === 0) {
+      this.state = predicted;
+      this.variance = predVar;
+      return [null, null, null];
+    }
 
-          let cost =
-            (1 - this.priorWeight) * contCost +
-            this.priorWeight * priorCost * 200;
+    // --- Assignment ---
+    const best = this._bestAssignment(formants, predicted, predVar);
 
-          if (cost < bestCost) {
-            bestCost = cost;
-            bestF1 = candidates[0];
-            bestF2 = candidates[1];
-            bestF3 = candidates[2];
+    // --- Update step ---
+    const result = [null, null, null];
+    const newState = [...predicted];
+    const newVar = [...predVar];
+
+    for (let t = 0; t < 3; t++) {
+      const obsIdx = best[t];
+      if (obsIdx !== null) {
+        const z = formants[obsIdx];
+        const S = predVar[t] + this.measureNoise[t];
+        const K = predVar[t] / S;
+        newState[t] = predicted[t] + K * (z - predicted[t]);
+        newVar[t] = (1 - K) * predVar[t];
+        result[t] = newState[t];
+      }
+    }
+
+    this.state = newState;
+    this.variance = newVar;
+
+    return result;
+  }
+
+  _bestAssignment(formants, predicted, predVar) {
+    const options = [null, ...formants.map((_, i) => i)];
+
+    let bestScore = -Infinity;
+    let bestAssignment = [null, null, null];
+
+    for (const a0 of options) {
+      for (const a1 of options) {
+        if (a1 !== null && a1 === a0) continue;
+        for (const a2 of options) {
+          if (a2 !== null && (a2 === a0 || a2 === a1)) continue;
+
+          const assignment = [a0, a1, a2];
+          if (!this._checkOrdering(formants, assignment)) continue;
+
+          // Require at least 1 assignment — don't allow all-null
+          if (a0 === null && a1 === null && a2 === null) continue;
+
+          const score = this._scoreAssignment(
+            formants,
+            assignment,
+            predicted,
+            predVar,
+          );
+
+          if (score > bestScore) {
+            bestScore = score;
+            bestAssignment = assignment;
           }
         }
       }
     }
 
-    let updated = false;
-    if (Math.abs(bestF1 - this.f1) <= this.maxJump) {
-      this.f1 = this.smooth * this.f1 + (1 - this.smooth) * bestF1;
-      updated = true;
-    }
-    if (Math.abs(bestF2 - this.f2) <= this.maxJump) {
-      this.f2 = this.smooth * this.f2 + (1 - this.smooth) * bestF2;
-      updated = true;
-    }
-    if (Math.abs(bestF3 - this.f3) <= this.maxJump) {
-      this.f3 = this.smooth * this.f3 + (1 - this.smooth) * bestF3;
-      updated = true;
-    }
+    return bestAssignment;
+  }
 
-    if (updated) {
-      this.missCount = 0;
-    } else {
-      // All three were gated — nothing matched
-      this.missCount++;
-      if (this.missCount >= this.resetAfter) {
-        this.f1 = null;
-        this.f2 = null;
-        this.f3 = null;
-        return this._initialize(formants);
+  _checkOrdering(formants, assignment) {
+    let prev = -Infinity;
+    for (let t = 0; t < 3; t++) {
+      if (assignment[t] !== null) {
+        const f = formants[assignment[t]];
+        if (f <= prev) return false;
+        prev = f;
+      }
+    }
+    return true;
+  }
+
+  _scoreAssignment(formants, assignment, predicted, predVar) {
+    let score = 0;
+
+    for (let t = 0; t < 3; t++) {
+      const obsIdx = assignment[t];
+
+      if (obsIdx !== null) {
+        const z = formants[obsIdx];
+        const S = predVar[t] + this.measureNoise[t];
+
+        // Innovation log-likelihood
+        const innovation = z - predicted[t];
+        score += (-0.5 * (innovation * innovation)) / S - 0.5 * Math.log(S);
+
+        // Prior pull
+        const priorDist = z - this.priors[t].center;
+        score -=
+          (this.priorWeight * (priorDist * priorDist)) / this.priors[t].var;
+      } else {
+        // Scale missing penalty by confidence — if we're uncertain anyway,
+        // missing is less surprising; if we're confident, missing is costly
+        const confidence =
+          this.priors[t].var / (predVar[t] + this.priors[t].var);
+        score -= this.missingPenalty * (0.5 + 0.5 * confidence);
       }
     }
 
-    return [this.f1, this.f2, this.f3];
+    // Bonus for more assignments — prefer explaining observations
+    let nAssigned = assignment.filter((a) => a !== null).length;
+    score += nAssigned * 8;
+
+    return score;
   }
 
   _initialize(formants) {
-    let bestCost = Infinity;
-    let bestTriple = [formants[0], formants[1], formants[2]];
+    if (formants.length < 2) return [null, null, null];
 
-    for (let i = 0; i < formants.length; i++) {
-      for (let j = i + 1; j < formants.length; j++) {
-        for (let k = j + 1; k < formants.length; k++) {
-          let cost =
-            Math.abs(formants[i] - this.priors[0].center) /
-              this.priors[0].width +
-            Math.abs(formants[j] - this.priors[1].center) /
-              this.priors[1].width +
-            Math.abs(formants[k] - this.priors[2].center) /
-              this.priors[2].width;
-          if (cost < bestCost) {
-            bestCost = cost;
-            bestTriple = [formants[i], formants[j], formants[k]];
+    const options = [null, ...formants.map((_, i) => i)];
+
+    let bestScore = -Infinity;
+    let bestAssignment = [null, null, null];
+
+    for (const a0 of options) {
+      for (const a1 of options) {
+        if (a1 !== null && a1 === a0) continue;
+        for (const a2 of options) {
+          if (a2 !== null && (a2 === a0 || a2 === a1)) continue;
+
+          const assignment = [a0, a1, a2];
+          if (!this._checkOrdering(formants, assignment)) continue;
+
+          let score = 0;
+          let nAssigned = 0;
+          for (let t = 0; t < 3; t++) {
+            if (assignment[t] !== null) {
+              const f = formants[assignment[t]];
+              const dist = f - this.priors[t].center;
+              score -= (dist * dist) / this.priors[t].var;
+              nAssigned++;
+            } else {
+              score -= this.missingPenalty;
+            }
+          }
+          if (nAssigned < 2) continue;
+
+          if (score > bestScore) {
+            bestScore = score;
+            bestAssignment = assignment;
           }
         }
       }
     }
 
-    [this.f1, this.f2, this.f3] = bestTriple;
-    this.missCount = 0;
-    return [this.f1, this.f2, this.f3];
+    this.state = [
+      this.priors[0].center,
+      this.priors[1].center,
+      this.priors[2].center,
+    ];
+    this.variance = [
+      this.priors[0].var,
+      this.priors[1].var,
+      this.priors[2].var,
+    ];
+
+    const result = [null, null, null];
+    for (let t = 0; t < 3; t++) {
+      if (bestAssignment[t] !== null) {
+        const z = formants[bestAssignment[t]];
+        const S = this.variance[t] + this.measureNoise[t];
+        const K = this.variance[t] / S;
+        this.state[t] = this.priors[t].center + K * (z - this.priors[t].center);
+        this.variance[t] = (1 - K) * this.variance[t];
+        result[t] = this.state[t];
+      }
+    }
+
+    return result;
   }
 }

@@ -84,6 +84,7 @@ export function formantAnalysis(
   M,
   nPoles,
   sampleRate,
+  bandwidthThreshold,
   eig,
   fftModule,
 ) {
@@ -123,7 +124,7 @@ export function formantAnalysis(
     // Bandwidth filter — reject broad/weak poles
     let r = Math.sqrt(re * re + im * im);
     let bandwidth = (-Math.log(r) * sampleRate) / Math.PI;
-    if (bandwidth > 400) continue;
+    if (bandwidth > bandwidthThreshold) continue;
 
     F.push(freq);
   }

@@ -3,13 +3,12 @@ export class FormantGrid {
     this.vowelCanvas = vowelCanvas;
     this.vowelCanvasCtx = vowelCanvas.getContext("2d");
 
-    const [layer, context] = newContext(vowelCanvas);
-    this.vowelLayer = layer;
-    this.vowelLayerCtx = context;
-
-    const [layer2, context2] = newContext(vowelCanvas);
-    this.vowelLayer2 = layer2;
-    this.vowelLayer2Ctx = context2;
+    // Single offscreen canvas for trail
+    const off = document.createElement("canvas");
+    off.width = vowelCanvas.width;
+    off.height = vowelCanvas.height;
+    this.offCanvas = off;
+    this.offCtx = off.getContext("2d");
 
     this.transformFunction = transformFunction;
     this.f1Min = f1Min;
@@ -17,167 +16,136 @@ export class FormantGrid {
     this.f2Min = f2Min;
     this.f2Max = f2Max;
 
-    this.isLastValid = false;
-    this.lastX = null;
-    this.lastY = null;
-    this.lastR = null;
+    this.trail = [];
+    this.maxTrail = 300;
+    this.decayRate = 0.98;
   }
 
   draw(F_filtered, avgAmpl, elapsed) {
-    // Draw formant gridlines
-    this.vowelCanvasCtx.fillStyle = "rgb(240,240,240)";
-    this.vowelCanvasCtx.fillRect(
-      0,
-      0,
-      this.vowelCanvas.width,
-      this.vowelCanvas.height,
-    );
-
+    const ctx = this.vowelCanvasCtx;
+    const w = this.vowelCanvas.width;
+    const h = this.vowelCanvas.height;
     const t = this.transformFunction;
-    const f1YCoord = (i) =>
-      ((t(i) - t(this.f1Min)) / (t(this.f1Max) - t(this.f1Min))) *
-      this.vowelCanvas.height;
-    const f2XCoord = (i) =>
-      ((-t(i) + t(this.f2Max)) / (t(this.f2Max) - t(this.f2Min))) *
-      this.vowelCanvas.width;
 
-    // Grey out the invalid area (F1 > F2)
-    this.vowelCanvasCtx.fillStyle = "rgb(230,230,230)";
-    this.vowelCanvasCtx.beginPath();
-    this.vowelCanvasCtx.moveTo(f2XCoord(this.f1Max), f1YCoord(this.f1Max));
-    this.vowelCanvasCtx.lineTo(f2XCoord(this.f2Min), f1YCoord(this.f2Min));
-    this.vowelCanvasCtx.lineTo(f2XCoord(this.f2Min), f1YCoord(this.f1Max));
-    this.vowelCanvasCtx.fill();
-    this.vowelCanvasCtx.closePath();
+    // --- Draw grid (unchanged) ---
+    ctx.fillStyle = "rgb(240,240,240)";
+    ctx.fillRect(0, 0, w, h);
+
+    const f1YCoord = (i) =>
+      ((t(i) - t(this.f1Min)) / (t(this.f1Max) - t(this.f1Min))) * h;
+    const f2XCoord = (i) =>
+      ((-t(i) + t(this.f2Max)) / (t(this.f2Max) - t(this.f2Min))) * w;
+
+    ctx.fillStyle = "rgb(230,230,230)";
+    ctx.beginPath();
+    ctx.moveTo(f2XCoord(this.f1Max), f1YCoord(this.f1Max));
+    ctx.lineTo(f2XCoord(this.f2Min), f1YCoord(this.f2Min));
+    ctx.lineTo(f2XCoord(this.f2Min), f1YCoord(this.f1Max));
+    ctx.fill();
 
     for (let i = this.f1Min; i < this.f1Max; i += 100) {
       let y = f1YCoord(i);
-
       let th;
       if (i % 500 === 0) {
-        this.vowelCanvasCtx.fillStyle = "rgb(60,60,60)";
-        this.vowelCanvasCtx.font = "bold 11px sans-serif";
+        ctx.fillStyle = "rgb(60,60,60)";
+        ctx.font = "bold 11px sans-serif";
         th = 2;
       } else {
-        this.vowelCanvasCtx.fillStyle = "rgb(100,100,100)";
-        this.vowelCanvasCtx.font = "10px sans-serif";
+        ctx.fillStyle = "rgb(100,100,100)";
+        ctx.font = "10px sans-serif";
         th = 1;
       }
-      this.vowelCanvasCtx.fillRect(0, y - th / 2, this.vowelCanvas.width, th);
-      this.vowelCanvasCtx.fillText(i === this.f1Min ? `F1` : `${i}`, 1, y + 10);
+      ctx.fillRect(0, y - th / 2, w, th);
+      ctx.fillText(i === this.f1Min ? "F1" : `${i}`, 1, y + 10);
     }
     for (let i = this.f2Min; i <= this.f2Max; i += 100) {
       let x = f2XCoord(i);
-
       let th;
       let doLabel = true;
       if (i % 500 === 0) {
-        this.vowelCanvasCtx.fillStyle = "rgb(60,60,60)";
-        this.vowelCanvasCtx.font = "bold 11px sans-serif";
+        ctx.fillStyle = "rgb(60,60,60)";
+        ctx.font = "bold 11px sans-serif";
         th = 2;
       } else if (i < 1500) {
-        this.vowelCanvasCtx.fillStyle = "rgb(100,100,100)";
-        this.vowelCanvasCtx.font = "10px sans-serif";
+        ctx.fillStyle = "rgb(100,100,100)";
+        ctx.font = "10px sans-serif";
         th = 1;
       } else {
         doLabel = false;
       }
       if (doLabel) {
-        this.vowelCanvasCtx.fillRect(
-          x - th / 2,
-          0,
-          th,
-          this.vowelCanvas.height,
-        );
-        this.vowelCanvasCtx.fillText(
-          i === this.f2Min + 100 ? `F2` : `${i}`,
-          x + 1,
-          this.vowelCanvas.height - 3,
-        );
+        ctx.fillRect(x - th / 2, 0, th, h);
+        ctx.fillText(i === this.f2Min + 100 ? "F2" : `${i}`, x + 1, h - 3);
       }
     }
 
-    // Draw vowel space
+    // --- Add new point to trail ---
     if (F_filtered.length >= 2) {
-      let x_coord =
-        (-t(F_filtered[1]) + t(this.f2Max)) / (t(this.f2Max) - t(this.f2Min));
-      x_coord *= this.vowelCanvas.width;
-      let y_coord =
-        (t(F_filtered[0]) - t(this.f1Min)) / (t(this.f1Max) - t(this.f1Min));
-      y_coord *= this.vowelCanvas.height;
-      let r = Math.sqrt(Math.max(1, 20 * (3 + Math.log10(avgAmpl))));
+      const x =
+        ((-t(F_filtered[1]) + t(this.f2Max)) /
+          (t(this.f2Max) - t(this.f2Min))) *
+        w;
+      const y =
+        ((t(F_filtered[0]) - t(this.f1Min)) / (t(this.f1Max) - t(this.f1Min))) *
+        h;
+      const r = Math.sqrt(Math.max(1, 20 * (3 + Math.log10(avgAmpl))));
+      const hue = elapsed * 0.2;
 
-      // Render new dot on buffer#1
-      this.vowelLayerCtx.fillStyle = `hsl(${elapsed * 0.2}deg 80% 50%)`;
-      this.vowelLayerCtx.beginPath();
-      this.vowelLayerCtx.ellipse(x_coord, y_coord, r, r, 0, 0, 2 * Math.PI);
-      this.vowelLayerCtx.fill();
-      this.vowelLayerCtx.closePath();
-
-      if (this.isLastValid && r > 3) {
-        let dx = x_coord - this.lastX;
-        let dy = y_coord - this.lastY;
-        let rd = r - this.lastR;
-
-        let d_sq = dx * dx + dy * dy;
-        let t = Math.sqrt(rd * rd * dx * dx - d_sq * (rd * rd - dy * dy));
-
-        let a1x = (rd * dx + t) / d_sq;
-        let a1y = (rd - dx * a1x) / dy;
-
-        let a2x = (rd * dx - t) / d_sq;
-        let a2y = (rd - dx * a2x) / dy;
-
-        this.vowelLayerCtx.beginPath();
-        this.vowelLayerCtx.moveTo(x_coord - r * a1x, y_coord - r * a1y);
-        this.vowelLayerCtx.lineTo(
-          this.lastX - this.lastR * a1x,
-          this.lastY - this.lastR * a1y,
-        );
-        this.vowelLayerCtx.lineTo(
-          this.lastX - this.lastR * a2x,
-          this.lastY - this.lastR * a2y,
-        );
-        this.vowelLayerCtx.lineTo(x_coord - r * a2x, y_coord - r * a2y);
-        this.vowelLayerCtx.fill();
-        this.vowelLayerCtx.closePath();
+      this.trail.push({ x, y, r, hue });
+      if (this.trail.length > this.maxTrail) {
+        this.trail.shift();
       }
-
-      // Render on buffer#2 with slightly lowered opacity
-      this.vowelLayer2Ctx.globalAlpha = 1.0;
-      this.vowelLayer2Ctx.clearRect(
-        0,
-        0,
-        this.vowelCanvas.width,
-        this.vowelCanvas.height,
-      );
-      this.vowelLayer2Ctx.globalAlpha = 0.99;
-      this.vowelLayer2Ctx.drawImage(this.vowelLayer, 0, 0);
-
-      // Overwrite buffer#1
-      this.vowelLayerCtx.clearRect(
-        0,
-        0,
-        this.vowelCanvas.width,
-        this.vowelCanvas.height,
-      );
-      this.vowelLayerCtx.drawImage(this.vowelLayer2, 0, 0);
-
-      // Draw buffer#1 on top of grid onto screen
-      this.vowelCanvasCtx.drawImage(this.vowelLayer, 0, 0);
-
-      this.lastX = x_coord;
-      this.lastY = y_coord;
-      this.lastR = r;
-      this.isLastValid = true;
     }
-  }
-}
 
-// Make new virtual canvasCtx with identical size
-function newContext({ width, height }, contextType = "2d") {
-  const canvas = document.createElement("canvas");
-  canvas.width = width;
-  canvas.height = height;
-  return [canvas, canvas.getContext(contextType)];
+    // --- Draw trail oldest to newest, no transparency ---
+    const off = this.offCtx;
+    off.clearRect(0, 0, w, h);
+    off.globalAlpha = 1.0;
+
+    for (let i = 0; i < this.trail.length; i++) {
+      const age = this.trail.length - 1 - i;
+      const fade = Math.pow(this.decayRate, age); // 1.0 = newest, 0.0 = oldest
+      if (fade < 0.01) continue;
+
+      const pt = this.trail[i];
+
+      // Fade via lightness: 50% (vivid) → 92% (nearly background white)
+      const lightness = 92 - fade * 42;
+      const saturation = fade * 80;
+      off.fillStyle = `hsl(${pt.hue}deg ${saturation}% ${lightness}%)`;
+
+      // Draw dot
+      off.beginPath();
+      off.ellipse(pt.x, pt.y, pt.r, pt.r, 0, 0, 2 * Math.PI);
+      off.fill();
+
+      // Draw connector to next point
+      if (i + 1 < this.trail.length) {
+        const next = this.trail[i + 1];
+        const dx = next.x - pt.x;
+        const dy = next.y - pt.y;
+        const rd = next.r - pt.r;
+        const d_sq = dx * dx + dy * dy;
+        const disc = rd * rd * dx * dx - d_sq * (rd * rd - dy * dy);
+
+        if (disc > 0 && Math.abs(dy) > 0.001 && pt.r > 3) {
+          const sq = Math.sqrt(disc);
+          const a1x = (rd * dx + sq) / d_sq;
+          const a1y = (rd - dx * a1x) / dy;
+          const a2x = (rd * dx - sq) / d_sq;
+          const a2y = (rd - dx * a2x) / dy;
+
+          off.beginPath();
+          off.moveTo(next.x - next.r * a1x, next.y - next.r * a1y);
+          off.lineTo(pt.x - pt.r * a1x, pt.y - pt.r * a1y);
+          off.lineTo(pt.x - pt.r * a2x, pt.y - pt.r * a2y);
+          off.lineTo(next.x - next.r * a2x, next.y - next.r * a2y);
+          off.fill();
+        }
+      }
+    }
+
+    off.globalAlpha = 1.0;
+    ctx.drawImage(this.offCanvas, 0, 0);
+  }
 }

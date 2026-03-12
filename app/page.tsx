@@ -1,7 +1,7 @@
 "use client";
 import dynamic from "next/dynamic";
 
-const Formant = dynamic(() => import("./formant"), {
+const Formant = dynamic(() => import("./FormantTracer"), {
   ssr: false,
   loading: () => <p>Loading...</p>,
 });

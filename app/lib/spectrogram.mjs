@@ -39,7 +39,7 @@ export class Spectrogram {
     }
   }
 
-  draw(freqDataHistory, formantsHistory) {
+  draw(freqDataHistory, origFormantsHistory, formantsHistory) {
     const beginIndex = Math.max(0, freqDataHistory.length - this.windowSize);
     const endIndex = freqDataHistory.length;
     const nFrames = endIndex - beginIndex;
@@ -99,37 +99,72 @@ export class Spectrogram {
 
     this.canvasCtx.putImageData(this.imageData, 0, 0);
 
-    // --- Formant lines (batched per formant) ---
-    const colors = ["rgb(255,50,50)", "rgb(50,255,50)", "rgb(50,50,255)"];
-    const formantBegin = Math.max(0, formantsHistory.length - this.windowSize);
+    // --- Formant lines + dots ---
+    for (const curFormantsHistory of [origFormantsHistory, formantsHistory]) {
+      const colors =
+        curFormantsHistory === origFormantsHistory
+          ? ["rgb(255,50,50)", "rgb(50,255,50)", "rgb(50,100,255)"]
+          : ["rgb(255,150,150)", "rgb(150,255,150)", "rgb(150,200,255)"];
+      const formantBegin = Math.max(
+        0,
+        curFormantsHistory.length - this.windowSize,
+      );
+      const ctx = this.canvasCtx;
 
-    for (let f = 0; f < 3; f++) {
-      this.canvasCtx.beginPath();
-      this.canvasCtx.strokeStyle = colors[f];
-      this.canvasCtx.lineWidth = 2;
-      let started = false;
+      for (let f = 0; f < 3; f++) {
+        ctx.strokeStyle = colors[f];
+        ctx.fillStyle = colors[f];
+        ctx.lineWidth = curFormantsHistory === origFormantsHistory ? 1 : 3;
 
-      for (let i = formantBegin; i < formantsHistory.length; i++) {
-        const formants = formantsHistory[i];
-        if (formants.length <= f) {
-          started = false;
-          continue;
+        let prevX = null,
+          prevY = null;
+
+        for (let i = formantBegin; i < curFormantsHistory.length; i++) {
+          const formants = curFormantsHistory[i];
+          if (formants[f] == null) {
+            if (
+              prevX !== null &&
+              (i === formantBegin + 1 || curFormantsHistory[i - 2]?.[f] == null)
+            ) {
+              ctx.beginPath();
+              ctx.ellipse(prevX, prevY, 3, 3, 0, 0, 2 * Math.PI);
+              ctx.fill();
+            }
+            prevX = null;
+            prevY = null;
+            continue;
+          }
+
+          const freq = formants[f];
+          const x = ((i - formantBegin) * this.width) / this.windowSize;
+          const y =
+            this.height -
+            ((freq - this.minFreq) / (this.maxFreq - this.minFreq)) *
+              this.height;
+
+          if (prevX !== null) {
+            ctx.beginPath();
+            ctx.moveTo(prevX, prevY);
+            ctx.lineTo(x, y);
+            ctx.stroke();
+          }
+
+          prevX = x;
+          prevY = y;
         }
 
-        const freq = formants[f];
-        const x = ((i - formantBegin) * this.width) / this.windowSize;
-        const y =
-          this.height -
-          ((freq - this.minFreq) / (this.maxFreq - this.minFreq)) * this.height;
-
-        if (!started) {
-          this.canvasCtx.moveTo(x, y);
-          started = true;
-        } else {
-          this.canvasCtx.lineTo(x, y);
+        if (prevX !== null) {
+          const len = curFormantsHistory.length;
+          if (
+            len - formantBegin < 2 ||
+            curFormantsHistory[len - 2]?.[f] == null
+          ) {
+            ctx.beginPath();
+            ctx.ellipse(prevX, prevY, 3, 3, 0, 0, 2 * Math.PI);
+            ctx.fill();
+          }
         }
       }
-      this.canvasCtx.stroke();
     }
   }
 }
