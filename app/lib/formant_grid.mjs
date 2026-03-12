@@ -128,11 +128,11 @@ export class FormantGrid {
       const hue = elapsed * 0.2;
 
       this.trail.push({ x, y, r, hue });
-      if (this.trail.length > this.maxTrail) {
-        this.trail.shift();
-      }
     } else if (F_filtered.length === 0) {
       this.trail.push(null);
+    }
+    if (this.trail.length > this.maxTrail) {
+      this.trail.shift();
     }
 
     // --- Draw trail oldest to newest, no transparency ---
