@@ -1,20 +1,14 @@
 import {
-  bandwidthThreshold,
   elemsPerWindow,
-  fftSize,
-  formantCeiling,
   formantElemsPerWindow,
-  formantFloor,
   freqBinSize,
   interval,
-  lpcNumPoles,
   nWindows,
-  sampleRate,
   windowSize,
 } from "../constants.js";
-import { detectF0, fft_mag, formantAnalysis } from "../lib/formant.mjs";
 import eig from "../lib/third_party/eigen.js";
 import { pffft_simd } from "../lib/third_party/pffft.simd.mjs";
+import { analyze } from "./analyze";
 
 class FormantProcessor extends AudioWorkletProcessor {
   constructor() {
@@ -105,43 +99,16 @@ class FormantProcessor extends AudioWorkletProcessor {
       this.timeData[i] = this.buffer.get(i) * this.gaussianWindow[i];
     }
 
-    // Check voicing first
-    const [voicing, f0] = detectF0(this.timeData, sampleRate);
-
-    // Run formant analysis
-    let [spectrum, N, M] = fft_mag(
-      Array.from(this.timeData), // expects a regular array
-      this.fftModule,
-      fftSize,
-    );
-    let [F, formantError] = formantAnalysis(
+    const {
       spectrum,
-      freqBinSize * 2,
-      freqBinSize * 2,
-      lpcNumPoles,
-      sampleRate,
-      bandwidthThreshold,
-      eig,
-      this.fftModule,
-    );
-
-    // Filter out extreme values and only take F1, F2, and F3
-    let F_filtered = [];
-    let nFormants = 0;
-    for (let i = 0; i < F.length && nFormants < 3; ++i) {
-      if (F[i] < formantFloor || F[i] > formantCeiling) {
-        continue;
-      }
-      F_filtered.push(F[i]);
-      nFormants += 1;
-    }
-
-    // Compute RMS amplitude
-    let avgAmpl = 0;
-    for (let i = 0; i < this.timeData.length; ++i) {
-      avgAmpl += (this.timeData[i] * this.timeData[i]) / this.timeData.length;
-    }
-    avgAmpl = Math.sqrt(avgAmpl);
+      voicing,
+      f0,
+      formants11,
+      formantError11,
+      formants13,
+      formantError13,
+      avgAmpl,
+    } = analyze(this.timeData, this.fftModule);
 
     // Push values into buffer
     if (this.formatsBuffer.num_items() === nWindows * elemsPerWindow) {
@@ -151,17 +118,25 @@ class FormantProcessor extends AudioWorkletProcessor {
       }
     }
     // push [avgAmpl, formantError, voicing, f0,
-    //       nFormants, F_filtered[0], F_filtered[1], F_filtered[2]]
+    //       nFormants, ...formants]
     this.formatsBuffer.put(this.intervalIndex);
     this.formatsBuffer.put(avgAmpl);
-    this.formatsBuffer.put(formantError);
     this.formatsBuffer.put(voicing);
     this.formatsBuffer.put(f0);
-    this.formatsBuffer.put(nFormants);
-    for (let i = 0; i < nFormants; ++i) {
-      this.formatsBuffer.put(F_filtered[i]);
+    this.formatsBuffer.put(formants11.length);
+    for (const formant of formants11) {
+      this.formatsBuffer.put(formant);
     }
-    for (let i = 0; i < formantElemsPerWindow - (nFormants + 6); ++i) {
+    this.formatsBuffer.put(formantError11);
+    this.formatsBuffer.put(formants13.length);
+    for (const formant of formants13) {
+      this.formatsBuffer.put(formant);
+    }
+    this.formatsBuffer.put(formantError13);
+    // Add padding
+    const padding =
+      formantElemsPerWindow - (formants11.length + formants13.length + 8);
+    for (let i = 0; i < padding; ++i) {
       this.formatsBuffer.put(0);
     }
     // Push spectrum into buffer
@@ -178,7 +153,7 @@ class FormantProcessor extends AudioWorkletProcessor {
     });
 
     // delete allocated memory
-    // eig.GC.flush();
+    eig.GC.flush();
 
     this.intervalIndex++;
   }

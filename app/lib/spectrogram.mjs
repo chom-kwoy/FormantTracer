@@ -43,17 +43,12 @@ export class Spectrogram {
     freqDataHistory,
     origFormantsHistory,
     formantsHistory,
-    confidencesHistory,
-    formantErrorsHistory,
-    voicingCoeffsHistory,
-    f0sHistory,
     validityHistory,
+    otherHistories,
     drawFilteredFormants,
-    drawOtherData,
   ) {
     const beginIndex = Math.max(0, freqDataHistory.length - this.windowSize);
     const endIndex = freqDataHistory.length;
-    const nFrames = endIndex - beginIndex;
 
     // --- Spectrogram via ImageData ---
     const pixels = this.pixels;
@@ -117,14 +112,6 @@ export class Spectrogram {
     }
 
     for (const curFormantsHistory of formantsToDraw) {
-      const colors =
-        curFormantsHistory === origFormantsHistory
-          ? [
-              "rgba(255,50,50,0.5)",
-              "rgba(50,255,50,0.5)",
-              "rgba(50,100,255,0.5)",
-            ]
-          : ["rgb(255,50,50)", "rgb(50,255,50)", "rgb(50,100,255)"];
       const formantBegin = Math.max(
         0,
         curFormantsHistory.length - this.windowSize,
@@ -132,14 +119,24 @@ export class Spectrogram {
       const ctx = this.canvasCtx;
 
       for (let f = 0; f < 3; f++) {
-        ctx.strokeStyle = colors[f];
-        ctx.fillStyle = colors[f];
         ctx.lineWidth = curFormantsHistory === origFormantsHistory ? 2 : 3;
 
         let prevX = null,
           prevY = null;
 
         for (let i = formantBegin; i < curFormantsHistory.length; i++) {
+          const validity = validityHistory[i];
+          const opacity =
+            curFormantsHistory === origFormantsHistory
+              ? 0.5 * validity + 0.1
+              : 1.0;
+          const colors = [
+            `rgba(255,50,50,${opacity})`,
+            `rgba(50,255,50,${opacity})`,
+            `rgba(50,100,255,${opacity})`,
+          ];
+          ctx.strokeStyle = colors[f];
+
           const formants = curFormantsHistory[i];
 
           const freq = formants[f];
@@ -162,56 +159,47 @@ export class Spectrogram {
       }
     }
 
-    if (drawOtherData) {
-      const histories = [
-        // formantErrorsHistory,
-        // voicingCoeffsHistory,
-        validityHistory,
-        // f2Confidence,
-        // f0sHistory,
-      ];
-      const colors = ["rgb(0,0,0)", "rgb(50,155,155)", "rgb(155,50,155)"];
-      const ctx = this.canvasCtx;
+    const colors = ["rgb(0,0,0)", "rgb(50,155,155)", "rgb(155,50,155)"];
+    const ctx = this.canvasCtx;
 
-      function draw(history, width, height, windowSize) {
-        const beginIndex = Math.max(0, history.length - windowSize);
-        const endIndex = history.length;
-        const max = Math.max(1.0, ...history);
-        const min = Math.min(0.0, ...history);
-        const range = max - min;
+    function draw(history, width, height, windowSize) {
+      const beginIndex = Math.max(0, history.length - windowSize);
+      const endIndex = history.length;
+      const max = Math.max(1.0, ...history);
+      const min = Math.min(0.0, ...history);
+      const range = max - min;
 
-        let prevX = null,
-          prevY = null;
-        for (let i = beginIndex; i < endIndex; i++) {
-          const val = history[i];
-          const x = ((i - beginIndex) * width) / windowSize;
-          const y = height - ((val - min) / range) * height;
+      let prevX = null,
+        prevY = null;
+      for (let i = beginIndex; i < endIndex; i++) {
+        const val = history[i];
+        const x = ((i - beginIndex) * width) / windowSize;
+        const y = height - ((val - min) / range) * height;
 
-          if (prevX !== null) {
-            ctx.beginPath();
-            ctx.moveTo(prevX, prevY);
-            ctx.lineTo(x, y);
-            ctx.stroke();
-          }
-
-          prevX = x;
-          prevY = y;
+        if (prevX !== null) {
+          ctx.beginPath();
+          ctx.moveTo(prevX, prevY);
+          ctx.lineTo(x, y);
+          ctx.stroke();
         }
-      }
 
-      for (let i = 0; i < histories.length; i++) {
-        ctx.strokeStyle = "white";
-        ctx.fillStyle = "white";
-        ctx.lineWidth = 6;
-        ctx.lineCap = "round";
-        draw(histories[i], this.width, this.height, this.windowSize);
-
-        ctx.strokeStyle = colors[i];
-        ctx.fillStyle = colors[i];
-        ctx.lineWidth = 2;
-        ctx.lineCap = "round";
-        draw(histories[i], this.width, this.height, this.windowSize);
+        prevX = x;
+        prevY = y;
       }
+    }
+
+    for (let i = 0; i < otherHistories.length; i++) {
+      ctx.strokeStyle = "white";
+      ctx.fillStyle = "white";
+      ctx.lineWidth = 6;
+      ctx.lineCap = "round";
+      draw(otherHistories[i], this.width, this.height, this.windowSize);
+
+      ctx.strokeStyle = colors[i];
+      ctx.fillStyle = colors[i];
+      ctx.lineWidth = 2;
+      ctx.lineCap = "round";
+      draw(otherHistories[i], this.width, this.height, this.windowSize);
     }
   }
 }

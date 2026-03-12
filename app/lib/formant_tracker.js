@@ -41,6 +41,64 @@ export class FormantTracker {
     return [...this.smoothed];
   }
 
+  // Score a candidate set against current predictions without modifying state
+  scoreCandidates(formants) {
+    if (this.state === null) {
+      let score = 0;
+      for (let t = 0; t < 3; t++) {
+        let bestDist = Infinity;
+        for (const f of formants) {
+          const dist = Math.abs(f - this.priors[t].center);
+          if (dist < bestDist) bestDist = dist;
+        }
+        score -= (bestDist * bestDist) / this.priors[t].var;
+      }
+      return score;
+    }
+
+    const predicted = new Array(3);
+    const predVar = new Array(3);
+    for (let t = 0; t < 3; t++) {
+      const v = this.variance[t] + this.processNoise[t];
+      predVar[t] = v;
+      const priorBlend = v / (v + this.priors[t].var);
+      predicted[t] =
+        (1 - priorBlend) * this.state[t] + priorBlend * this.priors[t].center;
+    }
+
+    const best = this._bestAssignment(formants, predicted, predVar);
+    return this._scoreAssignment(formants, best, predicted, predVar);
+  }
+
+  // Accept multiple { formants, validity } entries — pick best, then update
+  // candidateSets: [{ formants: number[], validity: number }, ...]
+  updateMulti(candidateSets) {
+    const valid = candidateSets.filter((s) => s.formants.length > 0);
+
+    if (valid.length === 0) {
+      // Average validity across all sets
+      const avgValidity =
+        candidateSets.length > 0
+          ? candidateSets.reduce((sum, s) => sum + s.validity, 0) /
+            candidateSets.length
+          : 0;
+      return this.update([], avgValidity);
+    }
+
+    let bestSet = valid[0];
+    let bestScore = -Infinity;
+
+    for (const candidate of valid) {
+      const score = this.scoreCandidates(candidate.formants);
+      if (score > bestScore) {
+        bestScore = score;
+        bestSet = candidate;
+      }
+    }
+
+    return this.update(bestSet.formants, bestSet.validity);
+  }
+
   update(formants, validity) {
     // Update the hidden validity probability state
     this.pValid =
