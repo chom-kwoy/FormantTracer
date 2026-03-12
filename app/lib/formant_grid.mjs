@@ -5,7 +5,7 @@ const VOWELS = [
   { vowel: "ø", F1: 370, F2: 1900 },
   { vowel: "ɛ", F1: 610, F2: 1900 },
   { vowel: "œ", F1: 590, F2: 1710 },
-  { vowel: "a", F1: 850, F2: 1600 },
+  { vowel: "a", F1: 850, F2: 1650 },
   { vowel: "ɶ", F1: 810, F2: 1550 },
 
   { vowel: "u", F1: 250, F2: 550 },
@@ -66,9 +66,12 @@ export class FormantGrid {
     const f2XCoord = (i) =>
       ((-t2(i) + t2(this.f2Max)) / (t2(this.f2Max) - t2(this.f2Min))) * w;
 
-    ctx.fillStyle = "rgb(230,230,230)";
+    ctx.fillStyle = "rgb(220,220,220)";
     ctx.beginPath();
     ctx.moveTo(f2XCoord(this.f1Max), f1YCoord(this.f1Max));
+    for (let f = this.f1Max; f >= this.f2Min; f -= 100) {
+      ctx.lineTo(f2XCoord(f), f1YCoord(f));
+    }
     ctx.lineTo(f2XCoord(this.f2Min), f1YCoord(this.f2Min));
     ctx.lineTo(f2XCoord(this.f2Min), f1YCoord(this.f1Max));
     ctx.fill();
@@ -86,7 +89,11 @@ export class FormantGrid {
         th = 1;
       }
       ctx.fillRect(0, y - th / 2, w, th);
-      ctx.fillText(i === this.f1Min ? "F1" : `${i}`, 1, y + 10);
+      ctx.fillText(
+        i === this.f1Min ? "F1 (Hz)" : `${i}`,
+        1,
+        y + (i === this.f1Min ? 10 : -2),
+      );
     }
     for (let i = this.f2Min; i <= this.f2Max; i += 100) {
       let x = f2XCoord(i);
@@ -96,7 +103,7 @@ export class FormantGrid {
         ctx.fillStyle = "rgb(60,60,60)";
         ctx.font = "bold 11px sans-serif";
         th = 2;
-      } else if (i < 1500) {
+      } else if (i < 2500) {
         ctx.fillStyle = "rgb(100,100,100)";
         ctx.font = "10px sans-serif";
         th = 1;
@@ -109,16 +116,29 @@ export class FormantGrid {
       }
     }
 
+    ctx.save();
     // Draw vowel points
-    ctx.fillStyle = "rgb(255,0,0)";
-    ctx.beginPath();
+    ctx.font = "italic 15px sans-serif";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.lineWidth = 1;
+    ctx.strokeStyle = "black";
+
     for (const { vowel, F1, F2 } of VOWELS) {
       const x = f2XCoord(F2);
       const y = f1YCoord(F1);
-      ctx.moveTo(x, y);
+
+      // Draw the red point
+      ctx.fillStyle = "rgb(255,0,0)";
+      ctx.beginPath();
       ctx.arc(x, y, 2, 0, 2 * Math.PI);
-      ctx.fillText(vowel, x + 1, y - 1);
+      ctx.fill();
+
+      // Draw the dark blue text fill
+      ctx.fillStyle = "darkblue";
+      ctx.fillText(vowel, x + 10, y - 10);
     }
+    ctx.restore();
 
     // --- Add new point to trail ---
     if (F_filtered.length >= 2) {

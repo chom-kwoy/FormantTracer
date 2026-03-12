@@ -8,5 +8,5 @@ export const elemsPerWindow = formantElemsPerWindow + freqBinSize;
 export const interval = 32;
 export const formantFloor = 150;
 export const formantCeiling = 5500;
-export const lpcNumPoles = 10;
-export const bandwidthThreshold = 400;
+export const lpcNumPoles = 11;
+export const bandwidthThreshold = 1000;

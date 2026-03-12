@@ -145,7 +145,7 @@ export class Spectrum {
       for (let i = 0; i < magnitudes.length; i++) {
         const barHeight = magnitudes[i] * 2 * this.canvas.height;
 
-        this.canvasCtx.fillStyle = "rgb(50,255,50)";
+        this.canvasCtx.fillStyle = "rgb(200,200,50)";
         this.canvasCtx.fillRect(
           x,
           this.canvas.height / 3 - barHeight / 3,
@@ -157,7 +157,7 @@ export class Spectrum {
       }
 
       for (let i = 0; i <= 2500; i += 500) {
-        this.canvasCtx.fillStyle = "rgb(255,50,255)";
+        this.canvasCtx.fillStyle = "rgb(255,255,255)";
         this.canvasCtx.fillRect(
           (i / (sampleRate / 2)) * this.canvas.width,
           this.canvas.height / 3 - this.canvas.height / 3,
@@ -167,11 +167,15 @@ export class Spectrum {
       }
 
       for (let i = 0; i <= F_filtered.length; ++i) {
-        this.canvasCtx.fillStyle = "rgb(255,50,50)";
+        this.canvasCtx.fillStyle = [
+          "rgb(255,50,50)",
+          "rgb(50,255,50)",
+          "rgb(50,100,255)",
+        ][i];
         this.canvasCtx.fillRect(
           (F_filtered[i] / (sampleRate / 2)) * this.canvas.width,
           this.canvas.height / 3 - this.canvas.height / 3,
-          barWidth * 3,
+          5,
           this.canvas.height / 3,
         );
       }
