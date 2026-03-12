@@ -25,10 +25,10 @@ export class FormantApp {
   private isPlaying = false;
   private drawRefreshFn: ((ts: number) => void) | null = null;
   private isMale: boolean;
-  private vowelCanvas: DeblurredCanvas;
-  private spectrumCanvas: DeblurredCanvas;
-  private spectrogramCanvas: DeblurredCanvas;
-  private spectrogram2Canvas: DeblurredCanvas;
+  private readonly vowelCanvas: DeblurredCanvas;
+  private readonly spectrumCanvas: DeblurredCanvas;
+  private readonly spectrogramCanvas: DeblurredCanvas;
+  private readonly spectrogram2Canvas: DeblurredCanvas;
 
   constructor(isMale: boolean) {
     this.isMale = isMale;
@@ -150,6 +150,12 @@ export class FormantApp {
 
     let f0Sum = 0;
     let f0Count = 0;
+
+    spectrogram2.onHover((time, freq) => {
+      // time: seconds relative to now (negative = in the past, e.g. -2.3s)
+      // freq: Hz, clamped to [minFreq, maxFreq]
+      console.log(time, freq);
+    });
 
     const drawRefresh = (timeStamp: number) => {
       this.animFrameId = requestAnimationFrame(drawRefresh);

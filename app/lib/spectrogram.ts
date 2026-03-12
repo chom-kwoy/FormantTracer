@@ -2,12 +2,17 @@ import { DeblurredCanvas } from "@/app/lib/types";
 
 import { freqBinSize, sampleRate } from "../constants.js";
 
+export type SpectrogramHoverCallback = (
+  time: number | null,
+  freq: number | null,
+) => void;
+
 export class Spectrogram {
-  private canvas: DeblurredCanvas;
-  private canvasCtx: CanvasRenderingContext2D;
-  private width: number;
-  private height: number;
-  private imageData: ImageData;
+  private readonly canvas: DeblurredCanvas;
+  private readonly canvasCtx: CanvasRenderingContext2D;
+  private readonly width: number;
+  private readonly height: number;
+  private readonly imageData: ImageData;
   private dbBuffer: Float32Array | null;
   private greyLUT: Uint32Array | null;
 
@@ -20,6 +25,12 @@ export class Spectrogram {
   private rowToBin: Float32Array;
   private slotX: Float32Array;
   private preemphasis: Float32Array;
+
+  private hoverCallback: SpectrogramHoverCallback | null;
+  private currentFrameCount: number;
+
+  private boundOnMouseMove: (e: MouseEvent) => void;
+  private boundOnMouseLeave: () => void;
 
   constructor(canvas: DeblurredCanvas) {
     this.canvas = canvas;
@@ -58,6 +69,55 @@ export class Spectrogram {
         this.maxFreq - (row / this.height) * (this.maxFreq - this.minFreq);
       this.preemphasis[row] = 6 * Math.log2(Math.max(freq, 1) / 1000);
     }
+
+    this.hoverCallback = null;
+    this.currentFrameCount = 0;
+
+    this.boundOnMouseMove = this.onMouseMove.bind(this);
+    this.boundOnMouseLeave = this.onMouseLeave.bind(this);
+    this.canvas.addEventListener("mousemove", this.boundOnMouseMove);
+    this.canvas.addEventListener("mouseleave", this.boundOnMouseLeave);
+  }
+
+  onHover(callback: SpectrogramHoverCallback | null): void {
+    this.hoverCallback = callback;
+  }
+
+  destroy(): void {
+    this.canvas.removeEventListener("mousemove", this.boundOnMouseMove);
+    this.canvas.removeEventListener("mouseleave", this.boundOnMouseLeave);
+  }
+
+  private onMouseMove(e: MouseEvent): void {
+    const rect = this.canvas.getBoundingClientRect();
+
+    // Convert client coords → CSS pixels relative to canvas, then to canvas pixels
+    const cssX = e.clientX - rect.left;
+    const cssY = e.clientY - rect.top;
+    const px = cssX * (this.width / rect.width);
+    const py = cssY * (this.height / rect.height);
+
+    // Frequency: linear interpolation between minFreq (bottom) and maxFreq (top)
+    const freq =
+      this.maxFreq - (py / this.height) * (this.maxFreq - this.minFreq);
+
+    // Time: px/width maps to [0, windowSize) slots; slot 0 = oldest visible frame
+    const nFrames = Math.min(this.currentFrameCount, this.windowSize);
+    const slotFrac = (px / this.width) * nFrames;
+    // Slot index relative to the oldest visible frame → offset from newest (negative seconds)
+    const secondsPerFrame = 1 / (sampleRate / /* hop assumed in parent */ 512);
+    const time = (slotFrac - nFrames) * secondsPerFrame;
+
+    if (!this.hoverCallback) return;
+
+    this.hoverCallback(
+      time,
+      Math.max(this.minFreq, Math.min(this.maxFreq, freq)),
+    );
+  }
+
+  private onMouseLeave(): void {
+    this.hoverCallback?.(null, null);
   }
 
   draw(
@@ -71,6 +131,7 @@ export class Spectrogram {
     const beginIndex = Math.max(0, freqDataHistory.length - this.windowSize);
     const endIndex = freqDataHistory.length;
     const nFrames = endIndex - beginIndex;
+    this.currentFrameCount = freqDataHistory.length;
 
     // --- Single pass: compute all dB values and find global max ---
     if (!this.dbBuffer || this.dbBuffer.length < nFrames * this.height) {

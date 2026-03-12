@@ -36,21 +36,21 @@ const VOWELS: VowelReference[] = [
 type TransformFunction = (x: number) => number;
 
 export class FormantGrid {
-  private vowelCanvas: DeblurredCanvas;
-  private vowelCanvasCtx: CanvasRenderingContext2D;
-  private offCanvas: HTMLCanvasElement;
-  private offCtx: CanvasRenderingContext2D;
+  private readonly vowelCanvas: DeblurredCanvas;
+  private readonly vowelCanvasCtx: CanvasRenderingContext2D;
+  private readonly offCanvas: HTMLCanvasElement;
+  private readonly offCtx: CanvasRenderingContext2D;
 
-  private transformFunctionF1: TransformFunction;
-  private transformFunctionF2: TransformFunction;
-  private f1Min: number;
-  private f1Max: number;
-  private f2Min: number;
-  private f2Max: number;
+  private readonly transformFunctionF1: TransformFunction;
+  private readonly transformFunctionF2: TransformFunction;
+  private readonly f1Min: number;
+  private readonly f1Max: number;
+  private readonly f2Min: number;
+  private readonly f2Max: number;
 
-  private trail: (TrailPoint | null)[];
-  private maxTrail: number;
-  private decayRate: number;
+  private readonly trail: (TrailPoint | null)[];
+  private readonly maxTrail: number;
+  private readonly decayRate: number;
 
   constructor(
     vowelCanvas: DeblurredCanvas,

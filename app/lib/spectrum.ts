@@ -4,14 +4,14 @@ import { DeblurredCanvas } from "@/app/lib/types";
 type FFTModule = Awaited<ReturnType<typeof pffft_simd>>;
 
 export class Spectrum {
-  private canvas: DeblurredCanvas;
-  private canvasCtx: CanvasRenderingContext2D;
-  private fftModule: FFTModule;
-  private freqBinSize: number;
+  private readonly canvas: DeblurredCanvas;
+  private readonly canvasCtx: CanvasRenderingContext2D;
+  private readonly fftModule: FFTModule;
+  private readonly freqBinSize: number;
 
-  private pffft_runner: ReturnType<FFTModule["_pffft_runner_new"]>;
-  private dataPtr: ReturnType<FFTModule["_malloc"]>;
-  private dataHeap: Uint8Array;
+  private readonly pffft_runner: ReturnType<FFTModule["_pffft_runner_new"]>;
+  private readonly dataPtr: ReturnType<FFTModule["_malloc"]>;
+  private readonly dataHeap: Uint8Array;
 
   constructor(
     specCanvas: DeblurredCanvas,
