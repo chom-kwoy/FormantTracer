@@ -148,6 +148,7 @@ export class FormantApp {
 
     const drawRefresh = (timeStamp: number) => {
       this.animFrameId = requestAnimationFrame(drawRefresh);
+      const t0 = performance.now();
 
       if (startTime === undefined) startTime = timeStamp;
       const elapsed = timeStamp - startTime;
@@ -253,14 +254,23 @@ export class FormantApp {
         formantsHistory.push(filteredFormants);
         confidenceHistory.push(filterConfidence);
 
-        vowelSpace.draw(filteredFormants, newAvgAmpls[i], elapsed, this.isMale);
-        spectrum.draw(
-          freqData,
-          maxF0,
+        const doDraw = i === newAvgAmpls.length - 1;
+        vowelSpace.draw(
           filteredFormants,
-          logNoiseFloor,
-          sampleRate,
+          newAvgAmpls[i],
+          elapsed,
+          this.isMale,
+          doDraw,
         );
+        if (doDraw) {
+          spectrum.draw(
+            freqData,
+            maxF0,
+            filteredFormants,
+            logNoiseFloor,
+            sampleRate,
+          );
+        }
       }
 
       spectrogram.draw(
@@ -279,6 +289,8 @@ export class FormantApp {
         [validityHistory],
         true,
       );
+
+      console.debug("draw elapsed:", (performance.now() - t0).toFixed(2), "ms");
     };
 
     this.drawRefreshFn = drawRefresh;

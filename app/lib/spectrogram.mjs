@@ -7,7 +7,8 @@ export class Spectrogram {
     this.width = canvas.width;
     this.height = canvas.height;
     this.imageData = this.canvasCtx.createImageData(this.width, this.height);
-    this.pixels = this.imageData.data; // Uint8ClampedArray RGBA
+    this.dbBuffer = null;
+    this.greyLUT = null;
 
     this.windowSize = 300;
     this.minFreq = 200;
@@ -49,56 +50,64 @@ export class Spectrogram {
   ) {
     const beginIndex = Math.max(0, freqDataHistory.length - this.windowSize);
     const endIndex = freqDataHistory.length;
+    const nFrames = endIndex - beginIndex;
 
-    // --- Spectrogram via ImageData ---
-    const pixels = this.pixels;
-    pixels.fill(255); // white background
+    // --- Single pass: compute all dB values and find global max ---
+    // Lazily allocate reusable buffer
+    if (!this.dbBuffer || this.dbBuffer.length < nFrames * this.height) {
+      this.dbBuffer = new Float32Array(nFrames * this.height);
+    }
+    const dbBuf = this.dbBuffer;
 
-    // Find global max for dynamic range clamping
     let globalMax = -Infinity;
+    let idx = 0;
     for (let i = beginIndex; i < endIndex; i++) {
       const spec = freqDataHistory[i];
       for (let row = 0; row < this.height; row++) {
         const bin = this.rowToBin[row];
         const binLow = bin | 0;
-        const binHigh = Math.min(binLow + 1, freqBinSize - 1);
         const frac = bin - binLow;
-        const power = spec[binLow] * (1 - frac) + spec[binHigh] * frac;
+        const power = spec[binLow] + (spec[binLow + 1] - spec[binLow]) * frac;
         const dB = 10 * Math.log10(power + 1e-20) + this.preemphasis[row];
+        dbBuf[idx++] = dB;
         if (dB > globalMax) globalMax = dB;
       }
     }
 
     const floor = globalMax - this.dynamicRange;
+    const scale = 255 / this.dynamicRange;
 
-    // Render each column
-    for (let i = beginIndex; i < endIndex; i++) {
-      const spec = freqDataHistory[i];
-      const col = i - beginIndex;
+    // --- Build grey LUT (256 entries mapping quantized dB to packed RGBA) ---
+    if (!this.greyLUT) {
+      this.greyLUT = new Uint32Array(256);
+    }
+    for (let i = 0; i < 256; i++) {
+      const g = 255 - i;
+      // Little-endian ABGR
+      this.greyLUT[i] = (255 << 24) | (g << 16) | (g << 8) | g;
+    }
+
+    // --- Render via Uint32Array (one write per pixel) ---
+    const pixels32 = new Uint32Array(this.imageData.data.buffer);
+    // Fill white
+    const white = (255 << 24) | (255 << 16) | (255 << 8) | 255;
+    pixels32.fill(white);
+
+    idx = 0;
+    for (let col = 0; col < nFrames; col++) {
       const x0 = this.slotX[col] | 0;
       const x1 =
         col + 1 < this.windowSize ? this.slotX[col + 1] | 0 : this.width;
+      const colWidth = x1 - x0;
 
       for (let row = 0; row < this.height; row++) {
-        const bin = this.rowToBin[row];
-        const binLow = bin | 0;
-        const binHigh = Math.min(binLow + 1, freqBinSize - 1);
-        const frac = bin - binLow;
-        const power = spec[binLow] * (1 - frac) + spec[binHigh] * frac;
-        const dB = 10 * Math.log10(power + 1e-20) + this.preemphasis[row];
+        const dB = dbBuf[idx++];
+        const gi = ((dB - floor) * scale) | 0;
+        const grey = this.greyLUT[gi > 255 ? 255 : gi < 0 ? 0 : gi];
+        const rowOffset = row * this.width + x0;
 
-        // Normalize: 1 = black (at globalMax), 0 = white (at floor)
-        const normalized = (dB - floor) / this.dynamicRange;
-        const grey = (255 - Math.max(0, Math.min(1, normalized)) * 255) | 0;
-
-        // Fill all pixels in this column span
-        const rowOffset = row * this.width * 4;
-        for (let x = x0; x < x1; x++) {
-          const idx = rowOffset + x * 4;
-          pixels[idx] = grey;
-          pixels[idx + 1] = grey;
-          pixels[idx + 2] = grey;
-          pixels[idx + 3] = 255;
+        for (let x = 0; x < colWidth; x++) {
+          pixels32[rowOffset + x] = grey;
         }
       }
     }

@@ -50,69 +50,23 @@ export class FormantGrid {
     this.decayRate = 0.998;
   }
 
-  draw(F_filtered, avgAmpl, elapsed, isMale) {
+  draw(
+    F_filtered,
+    avgAmpl,
+    elapsed,
+    isMale,
+    doDraw = true, // if false, only add a new point
+  ) {
     const ctx = this.vowelCanvasCtx;
     const w = this.vowelCanvas.width;
     const h = this.vowelCanvas.height;
     const t1 = this.transformFunctionF1;
     const t2 = this.transformFunctionF2;
 
-    // --- Draw grid (unchanged) ---
-    ctx.fillStyle = "rgb(240,240,240)";
-    ctx.fillRect(0, 0, w, h);
-
     const f1YCoord = (i) =>
       ((t1(i) - t1(this.f1Min)) / (t1(this.f1Max) - t1(this.f1Min))) * h;
     const f2XCoord = (i) =>
       ((-t2(i) + t2(this.f2Max)) / (t2(this.f2Max) - t2(this.f2Min))) * w;
-
-    ctx.fillStyle = "rgb(220,220,220)";
-    ctx.beginPath();
-    ctx.moveTo(f2XCoord(this.f1Max), f1YCoord(this.f1Max));
-    for (let f = this.f1Max; f >= this.f2Min; f -= 100) {
-      ctx.lineTo(f2XCoord(f), f1YCoord(f));
-    }
-    ctx.lineTo(f2XCoord(this.f2Min), f1YCoord(this.f2Min));
-    ctx.lineTo(f2XCoord(this.f2Min), f1YCoord(this.f1Max));
-    ctx.fill();
-
-    for (let i = this.f1Min; i < this.f1Max; i += 100) {
-      let y = f1YCoord(i);
-      let th;
-      if (i % 500 === 0) {
-        ctx.fillStyle = "rgb(60,60,60)";
-        ctx.font = "bold 11px sans-serif";
-        th = 2;
-      } else {
-        ctx.fillStyle = "rgb(100,100,100)";
-        ctx.font = "10px sans-serif";
-        th = 1;
-      }
-      ctx.fillRect(0, y - th / 2, w, th);
-      ctx.fillText(
-        i === this.f1Min ? "F1 (Hz)" : `${i}`,
-        1,
-        y + (i === this.f1Min ? 10 : -2),
-      );
-    }
-    for (let i = this.f2Min; i <= this.f2Max; i += 100) {
-      let x = f2XCoord(i);
-      let th;
-      let doLabel = true;
-      if (i % 500 === 0) {
-        ctx.fillStyle = "rgb(60,60,60)";
-        ctx.font = "bold 11px sans-serif";
-        th = 2;
-      } else {
-        ctx.fillStyle = "rgb(100,100,100)";
-        ctx.font = "10px sans-serif";
-        th = 1;
-      }
-      if (doLabel) {
-        ctx.fillRect(x - th / 2, 0, th, h);
-        ctx.fillText(i === this.f2Min + 100 ? "F2" : `${i}`, x + 1, h - 3);
-      }
-    }
 
     // --- Add new point to trail ---
     if (F_filtered.length >= 2) {
@@ -135,104 +89,158 @@ export class FormantGrid {
       this.trail.shift();
     }
 
-    // --- Draw trail oldest to newest, no transparency ---
-    const off = this.offCtx;
-    off.clearRect(0, 0, w, h);
-    off.globalAlpha = 1.0;
+    if (doDraw) {
+      // --- Draw grid ---
+      ctx.fillStyle = "rgb(240,240,240)";
+      ctx.fillRect(0, 0, w, h);
 
-    for (let i = 0; i < this.trail.length; i++) {
-      const age = this.trail.length - 1 - i;
-      const fade = Math.pow(this.decayRate, age); // 1.0 = newest, 0.0 = oldest
-      if (fade < 0.01) continue;
+      ctx.fillStyle = "rgb(220,220,220)";
+      ctx.beginPath();
+      ctx.moveTo(f2XCoord(this.f1Max), f1YCoord(this.f1Max));
+      for (let f = this.f1Max; f >= this.f2Min; f -= 100) {
+        ctx.lineTo(f2XCoord(f), f1YCoord(f));
+      }
+      ctx.lineTo(f2XCoord(this.f2Min), f1YCoord(this.f2Min));
+      ctx.lineTo(f2XCoord(this.f2Min), f1YCoord(this.f1Max));
+      ctx.fill();
 
-      const pt = this.trail[i];
-      if (pt === null) {
-        continue;
+      for (let i = this.f1Min; i < this.f1Max; i += 100) {
+        let y = f1YCoord(i);
+        let th;
+        if (i % 500 === 0) {
+          ctx.fillStyle = "rgb(60,60,60)";
+          ctx.font = "bold 11px sans-serif";
+          th = 2;
+        } else {
+          ctx.fillStyle = "rgb(100,100,100)";
+          ctx.font = "10px sans-serif";
+          th = 1;
+        }
+        ctx.fillRect(0, y - th / 2, w, th);
+        ctx.fillText(
+          i === this.f1Min ? "F1 (Hz)" : `${i}`,
+          1,
+          y + (i === this.f1Min ? 10 : -2),
+        );
+      }
+      for (let i = this.f2Min; i <= this.f2Max; i += 100) {
+        let x = f2XCoord(i);
+        let th;
+        let doLabel = true;
+        if (i % 500 === 0) {
+          ctx.fillStyle = "rgb(60,60,60)";
+          ctx.font = "bold 11px sans-serif";
+          th = 2;
+        } else {
+          ctx.fillStyle = "rgb(100,100,100)";
+          ctx.font = "10px sans-serif";
+          th = 1;
+        }
+        if (doLabel) {
+          ctx.fillRect(x - th / 2, 0, th, h);
+          ctx.fillText(i === this.f2Min + 100 ? "F2" : `${i}`, x + 1, h - 3);
+        }
       }
 
-      // Fade via lightness: 50% (vivid) → 92% (nearly background white)
-      const lightness = 92 - fade * 42;
-      const saturation = fade * 80;
-      off.fillStyle = `hsl(${pt.hue}deg ${saturation}% ${lightness}%)`;
+      // --- Draw trail oldest to newest, no transparency ---
+      const off = this.offCtx;
+      off.clearRect(0, 0, w, h);
+      off.globalAlpha = 1.0;
 
-      // Draw dot
-      off.beginPath();
-      off.ellipse(pt.x, pt.y, pt.r, pt.r, 0, 0, 2 * Math.PI);
-      off.fill();
+      for (let i = 0; i < this.trail.length; i++) {
+        const age = this.trail.length - 1 - i;
+        const fade = Math.pow(this.decayRate, age); // 1.0 = newest, 0.0 = oldest
+        if (fade < 0.01) continue;
 
-      // Draw connector from previous point to current point
-      if (i > 0) {
-        const prev = this.trail[i - 1];
-        if (prev !== null) {
-          const dx = pt.x - prev.x;
-          const dy = pt.y - prev.y;
-          const rd = pt.r - prev.r;
-          const d_sq = dx * dx + dy * dy;
-          const disc = rd * rd * dx * dx - d_sq * (rd * rd - dy * dy);
-          if (disc > 0 && Math.abs(dy) > 0.001) {
-            const sq = Math.sqrt(disc);
-            const a1x = (rd * dx + sq) / d_sq;
-            const a1y = (rd - dx * a1x) / dy;
-            const a2x = (rd * dx - sq) / d_sq;
-            const a2y = (rd - dx * a2x) / dy;
-            off.beginPath();
-            off.moveTo(pt.x - pt.r * a1x, pt.y - pt.r * a1y);
-            off.lineTo(prev.x - prev.r * a1x, prev.y - prev.r * a1y);
-            off.lineTo(prev.x - prev.r * a2x, prev.y - prev.r * a2y);
-            off.lineTo(pt.x - pt.r * a2x, pt.y - pt.r * a2y);
-            off.fill();
+        const pt = this.trail[i];
+        if (pt === null) {
+          continue;
+        }
 
-            // Draw arrow
-            off.strokeStyle = `rgba(255,255,255,${fade * 0.9})`;
-            off.lineWidth = 1.2;
-            off.beginPath();
-            const len = Math.sqrt(d_sq);
-            const px = -dy / len;
-            const py = dx / len;
-            const w = prev.r * 0.5;
-            const a = -3 / Math.sqrt(d_sq);
-            off.moveTo(pt.x + dx * a + px * w, pt.y + dy * a + py * w);
-            off.lineTo(pt.x, pt.y);
-            off.lineTo(pt.x + dx * a - px * w, pt.y + dy * a - py * w);
-            off.stroke();
+        // Fade via lightness: 50% (vivid) → 92% (nearly background white)
+        const lightness = 92 - fade * 42;
+        const saturation = fade * 80;
+        off.fillStyle = `hsl(${pt.hue}deg ${saturation}% ${lightness}%)`;
+
+        // Draw dot
+        off.beginPath();
+        off.ellipse(pt.x, pt.y, pt.r, pt.r, 0, 0, 2 * Math.PI);
+        off.fill();
+
+        // Draw connector from previous point to current point
+        if (i > 0) {
+          const prev = this.trail[i - 1];
+          if (prev !== null) {
+            const dx = pt.x - prev.x;
+            const dy = pt.y - prev.y;
+            const rd = pt.r - prev.r;
+            const d_sq = dx * dx + dy * dy;
+            const disc = rd * rd * dx * dx - d_sq * (rd * rd - dy * dy);
+            if (disc > 0 && Math.abs(dy) > 0.001) {
+              const sq = Math.sqrt(disc);
+              const a1x = (rd * dx + sq) / d_sq;
+              const a1y = (rd - dx * a1x) / dy;
+              const a2x = (rd * dx - sq) / d_sq;
+              const a2y = (rd - dx * a2x) / dy;
+              off.beginPath();
+              off.moveTo(pt.x - pt.r * a1x, pt.y - pt.r * a1y);
+              off.lineTo(prev.x - prev.r * a1x, prev.y - prev.r * a1y);
+              off.lineTo(prev.x - prev.r * a2x, prev.y - prev.r * a2y);
+              off.lineTo(pt.x - pt.r * a2x, pt.y - pt.r * a2y);
+              off.fill();
+
+              // Draw arrow
+              off.strokeStyle = `rgba(255,255,255,${fade * 0.9})`;
+              off.lineWidth = 1.2;
+              off.beginPath();
+              const len = Math.sqrt(d_sq);
+              const px = -dy / len;
+              const py = dx / len;
+              const w = prev.r * 0.5;
+              const a = -3 / Math.sqrt(d_sq);
+              off.moveTo(pt.x + dx * a + px * w, pt.y + dy * a + py * w);
+              off.lineTo(pt.x, pt.y);
+              off.lineTo(pt.x + dx * a - px * w, pt.y + dy * a - py * w);
+              off.stroke();
+            }
           }
         }
       }
-    }
 
-    off.globalAlpha = 1.0;
-    ctx.drawImage(this.offCanvas, 0, 0);
+      off.globalAlpha = 1.0;
+      ctx.drawImage(this.offCanvas, 0, 0);
 
-    ctx.save();
-    // Draw vowel points
-    ctx.font = "italic 15px sans-serif";
-    ctx.textAlign = "center";
-    ctx.textBaseline = "middle";
-    ctx.lineWidth = 3;
-    ctx.strokeStyle = "white";
+      ctx.save();
+      // Draw vowel points
+      ctx.font = "italic 15px sans-serif";
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.lineWidth = 3;
+      ctx.strokeStyle = "white";
 
-    for (let { vowel, F1, F2 } of VOWELS) {
-      if (!isMale) {
-        // Female speakers typically have vocal tracts that are 10% to 15% shorter
-        F1 *= 1.12;
-        F2 *= 1.12;
+      for (let { vowel, F1, F2 } of VOWELS) {
+        if (!isMale) {
+          // Female speakers typically have vocal tracts that are 10% to 15% shorter
+          F1 *= 1.12;
+          F2 *= 1.12;
+        }
+        const x = f2XCoord(F2);
+        const y = f1YCoord(F1);
+
+        // Draw the red point
+        ctx.fillStyle = "rgb(255,0,0)";
+        ctx.beginPath();
+        ctx.arc(x, y, 2, 0, 2 * Math.PI);
+        ctx.fill();
+
+        // Draw the thick black text outline
+        ctx.strokeText(vowel, x + 10, y - 10);
+
+        // Draw the dark blue text fill
+        ctx.fillStyle = "darkblue";
+        ctx.fillText(vowel, x + 10, y - 10);
       }
-      const x = f2XCoord(F2);
-      const y = f1YCoord(F1);
-
-      // Draw the red point
-      ctx.fillStyle = "rgb(255,0,0)";
-      ctx.beginPath();
-      ctx.arc(x, y, 2, 0, 2 * Math.PI);
-      ctx.fill();
-
-      // Draw the thick black text outline
-      ctx.strokeText(vowel, x + 10, y - 10);
-
-      // Draw the dark blue text fill
-      ctx.fillStyle = "darkblue";
-      ctx.fillText(vowel, x + 10, y - 10);
+      ctx.restore();
     }
-    ctx.restore();
   }
 }
