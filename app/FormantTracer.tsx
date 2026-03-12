@@ -17,7 +17,7 @@ export default function FormantTracer() {
   return (
     <div className="bg-gray-100">
       <header className="flex items-center justify-between p-4 bg-blue-500 text-white mb-2">
-        <h1 className="text-xl font-bold">Vowel Tracer</h1>
+        <h1 className="text-xl font-bold">Formant Tracer</h1>
       </header>
       <div className="flex justify-center items-center space-x-4 m-1">
         <button
