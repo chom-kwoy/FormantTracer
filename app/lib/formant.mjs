@@ -75,7 +75,7 @@ function levinson(acf, nPoles) {
 
   a = Float32Array.from([1.0, ...a]);
 
-  return [a, v / acf[0]];
+  return [a, v / Math.max(1e-10, acf[0])];
 }
 
 export function formantAnalysis(
@@ -182,43 +182,68 @@ export function fft_mag(x, fftModule, minSize = 0) {
   return [magnitudes, N, M];
 }
 
-export function detectF0(timeData, sampleRate) {
+export function detectF0(timeData, sampleRate, energyThreshold = 0.001) {
   const N = timeData.length;
+  const minLag = Math.floor(sampleRate / 500);
+  const maxLag = Math.floor(sampleRate / 75);
 
-  // Expected pitch range: 75–500 Hz
-  const minLag = Math.floor(sampleRate / 500); // ~22 samples at 11kHz
-  const maxLag = Math.floor(sampleRate / 75); // ~146 samples at 11kHz
-
-  // Compute energy
+  // Compute overall energy to check for digital silence
   let energy = 0;
   for (let i = 0; i < N; i++) {
     energy += timeData[i] * timeData[i];
   }
 
-  if (energy < 1e-10) return [false, 0]; // silence
+  if (energy < energyThreshold) return [0.0, 0];
 
-  // Find peak in normalized autocorrelation within pitch range
-  let bestCorr = -1;
-  let bestLag = 0;
+  const yinBuffer = new Float32Array(maxLag + 1);
 
-  for (let lag = minLag; lag <= maxLag && lag < N; lag++) {
-    let num = 0;
-    let den1 = 0;
-    let den2 = 0;
+  // Calculate the squared difference function
+  for (let lag = 1; lag <= maxLag; lag++) {
+    let diff = 0;
     for (let i = 0; i < N - lag; i++) {
-      num += timeData[i] * timeData[i + lag];
-      den1 += timeData[i] * timeData[i];
-      den2 += timeData[i + lag] * timeData[i + lag];
+      const delta = timeData[i] - timeData[i + lag];
+      diff += delta * delta;
     }
-    const corr = num / Math.sqrt(den1 * den2 + 1e-20);
+    yinBuffer[lag] = diff;
+  }
 
-    if (corr > bestCorr) {
-      bestCorr = corr;
+  // Calculate the cumulative mean normalized difference function
+  yinBuffer[0] = 1;
+  let runningSum = 0;
+  for (let lag = 1; lag <= maxLag; lag++) {
+    runningSum += yinBuffer[lag];
+    yinBuffer[lag] *= lag / runningSum;
+  }
+
+  // Apply absolute thresholding to find the fundamental period
+  const threshold = 0.15;
+  let bestLag = -1;
+
+  for (let lag = minLag; lag <= maxLag; lag++) {
+    if (yinBuffer[lag] < threshold) {
+      // Find the local minimum within this specific threshold dip
+      while (lag + 1 <= maxLag && yinBuffer[lag + 1] < yinBuffer[lag]) {
+        lag++;
+      }
       bestLag = lag;
+      break;
+    }
+  }
+
+  // Fallback in case no lag dipped below the confidence threshold
+  if (bestLag === -1) {
+    let minVal = Infinity;
+    for (let lag = minLag; lag <= maxLag; lag++) {
+      if (yinBuffer[lag] < minVal) {
+        minVal = yinBuffer[lag];
+        bestLag = lag;
+      }
     }
   }
 
   const f0 = sampleRate / bestLag;
+  // Convert the difference score back into a 0.0 to 1.0 confidence metric
+  const confidence = Math.max(0.0, 1.0 - yinBuffer[bestLag]);
 
-  return [bestCorr, f0];
+  return [confidence, f0];
 }

@@ -47,6 +47,7 @@ export class Spectrogram {
     formantErrorsHistory,
     voicingCoeffsHistory,
     f0sHistory,
+    validityHistory,
     drawFilteredFormants,
     drawOtherData,
   ) {
@@ -163,19 +164,20 @@ export class Spectrogram {
 
     if (drawOtherData) {
       const histories = [
-        formantErrorsHistory,
-        voicingCoeffsHistory,
+        // formantErrorsHistory,
+        // voicingCoeffsHistory,
+        validityHistory,
+        // f2Confidence,
         // f0sHistory,
       ];
-      const colors = ["rgb(150,50,50)", "rgb(50,155,155)", "rgb(155,50,155)"];
+      const colors = ["rgb(0,0,0)", "rgb(50,155,155)", "rgb(155,50,155)"];
       const ctx = this.canvasCtx;
 
       function draw(history, width, height, windowSize) {
         const beginIndex = Math.max(0, history.length - windowSize);
         const endIndex = history.length;
-        const max = Math.max(...history);
-        if (history === formantErrorsHistory) console.log(max);
-        const min = Math.min(...history);
+        const max = Math.max(1.0, ...history);
+        const min = Math.min(0.0, ...history);
         const range = max - min;
 
         let prevX = null,

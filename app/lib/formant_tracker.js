@@ -3,7 +3,14 @@ export class FormantTracker {
     this.state = null;
     this.variance = null;
     this.smoothed = null;
-    this.smoothing = 0.5; // 0 = no smoothing, higher = more smooth
+    this.smoothing = 0.5;
+
+    // Validity tracking parameters
+    this.pValid = 0.0;
+    this.isValid = false;
+    this.validitySmoothing = 0.8;
+    this.turnOnThreshold = 0.65;
+    this.turnOffThreshold = 0.35;
 
     this.priors = [
       { center: 550, var: 500 * 500 },
@@ -18,6 +25,7 @@ export class FormantTracker {
     this.maxVariance = 500 * 500;
   }
 
+  // Helper function for exponential moving average
   _smooth(result) {
     if (this.smoothed === null) {
       this.smoothed = [...result];
@@ -33,14 +41,39 @@ export class FormantTracker {
     return [...this.smoothed];
   }
 
-  update(formants) {
+  update(formants, validity) {
+    // Update the hidden validity probability state
+    this.pValid =
+      this.validitySmoothing * this.pValid +
+      (1 - this.validitySmoothing) * validity;
+
+    // Apply hysteresis to determine discrete state
+    if (this.isValid && this.pValid < this.turnOffThreshold) {
+      this.isValid = false;
+    } else if (!this.isValid && this.pValid > this.turnOnThreshold) {
+      this.isValid = true;
+    }
+
+    // If the state is determined to be non-vowel noise
+    if (!this.isValid) {
+      this.state = null;
+      this.variance = null;
+      this.smoothed = null;
+      return {
+        formants: [],
+        confidence: [],
+        validProb: this.pValid,
+      };
+    }
+
+    // Kalman Filter Continuous State Logic begins here
     if (this.state === null) {
       const init = this._initialize(formants);
       init.formants = this._smooth(init.formants);
       return init;
     }
 
-    // --- Predict step ---
+    // Predict step
     const predicted = new Array(3);
     const predVar = new Array(3);
     for (let t = 0; t < 3; t++) {
@@ -62,7 +95,7 @@ export class FormantTracker {
       return init;
     }
 
-    // No observations — coast on prediction
+    // No observations scenario
     if (formants.length === 0) {
       this.state = predicted;
       this.variance = predVar;
@@ -74,10 +107,9 @@ export class FormantTracker {
       };
     }
 
-    // --- Assignment ---
+    // Assignment and Update step
     const best = this._bestAssignment(formants, predicted, predVar);
 
-    // --- Update step ---
     const newState = [...predicted];
     const newVar = [...predVar];
 

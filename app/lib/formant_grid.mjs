@@ -131,6 +131,8 @@ export class FormantGrid {
       if (this.trail.length > this.maxTrail) {
         this.trail.shift();
       }
+    } else if (F_filtered.length === 0) {
+      this.trail.push(null);
     }
 
     // --- Draw trail oldest to newest, no transparency ---
@@ -144,6 +146,9 @@ export class FormantGrid {
       if (fade < 0.01) continue;
 
       const pt = this.trail[i];
+      if (pt === null) {
+        continue;
+      }
 
       // Fade via lightness: 50% (vivid) → 92% (nearly background white)
       const lightness = 92 - fade * 42;
@@ -158,6 +163,9 @@ export class FormantGrid {
       // Draw connector to next point
       if (i + 1 < this.trail.length) {
         const next = this.trail[i + 1];
+        if (next === null) {
+          continue;
+        }
         const dx = next.x - pt.x;
         const dy = next.y - pt.y;
         const rd = next.r - pt.r;

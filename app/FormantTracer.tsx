@@ -59,7 +59,9 @@ export default function FormantTracer() {
       </div>
       <div className="flex flex-col items-center">
         <div>
-          <span>Formant Space</span>
+          <span>
+            Formant Space (X=f<sub>2</sub>, Y=f<sub>1</sub>)
+          </span>
           <canvas
             id="vowelspace"
             width="640"
@@ -145,7 +147,7 @@ class FormantApp {
     const maxF0 = 500;
     const logNoiseFloor = -120;
     this.audioCtx = new AudioContext({ sampleRate: sampleRate });
-    const filePath = "kawuy_male.mp3";
+    const filePath = "kawuy.mp3";
     // const filePath = "problematic.wav";
 
     const iirfilter = this.audioCtx.createIIRFilter(
@@ -221,6 +223,7 @@ class FormantApp {
     const confidenceHistory: number[][] = [];
     const formantErrorsHistory: number[] = [];
     const voicingCoeffsHistory: number[] = [];
+    const validityHistory: number[] = [];
     const f0sHistory: number[] = [];
     const freqDataHistory: Float32Array[] = [];
 
@@ -234,6 +237,8 @@ class FormantApp {
 
       const newAvgAmpls: number[] = [];
       const newFormants: number[][] = [];
+      const newFormantErrors: number[] = [];
+      const newVoicingCoeffs: number[] = [];
 
       // retrieve latest data from triple buffer
       tripleBuffer.consume((arr: Float32Array) => {
@@ -258,10 +263,10 @@ class FormantApp {
             newAvgAmpls.push(avgAmpl);
 
             const formantError = curPart.shift()!;
-            formantErrorsHistory.push(formantError);
+            newFormantErrors.push(formantError);
 
             const voicing = curPart.shift()!;
-            voicingCoeffsHistory.push(voicing);
+            newVoicingCoeffs.push(voicing);
 
             const f0 = curPart.shift()!;
             f0sHistory.push(f0);
@@ -281,17 +286,28 @@ class FormantApp {
       });
 
       for (let i = 0; i < newAvgAmpls.length; ++i) {
+        const formantError = newFormantErrors[i];
+        formantErrorsHistory.push(formantError);
+
+        const voicingCoeff = newVoicingCoeffs[i];
+        voicingCoeffsHistory.push(voicingCoeff);
+
+        // TODO: adjust coefficients
+        const validity = smoothstep(
+          0.1,
+          0.5,
+          Math.pow(1 - formantError, 2.0) * Math.pow(voicingCoeff, 0.5),
+        );
+        validityHistory.push(validity);
+
         const origFormants = newFormants[i];
         origFormantsHistory.push(origFormants);
 
-        const filterResults = tracker.update(origFormants);
+        const filterResults = tracker.update(origFormants, validity);
         const filteredFormants = filterResults.formants;
         const filterConfidence = filterResults.confidence;
         formantsHistory.push(filteredFormants);
         confidenceHistory.push(filterConfidence);
-
-        // console.log("orig", Array.from(formants));
-        // console.log("filtered", filteredFormants);
 
         vowelSpace.draw(filteredFormants, newAvgAmpls[i], elapsed, this.isMale);
         spectrum.draw(
@@ -311,6 +327,7 @@ class FormantApp {
         formantErrorsHistory,
         voicingCoeffsHistory,
         f0sHistory,
+        validityHistory,
         false,
         true,
       );
@@ -322,6 +339,7 @@ class FormantApp {
         formantErrorsHistory,
         voicingCoeffsHistory,
         f0sHistory,
+        validityHistory,
         true,
         false,
       );
@@ -350,4 +368,21 @@ function playSourceNode(audioContext: AudioContext, audioBuffer: AudioBuffer) {
 
 async function setupSample(audioCtx: AudioContext, filePath: string) {
   return await getFile(audioCtx, filePath);
+}
+
+function smoothstep(edge0: number, edge1: number, x: number) {
+  // Scale, bias and saturate x to 0..1 range.
+  x = clamp((x - edge0) / (edge1 - edge0), 0.0, 1.0);
+  // Evaluate polynomial 3*x^2 - 2*x^3.
+  return x * x * (3 - 2 * x);
+}
+
+function clamp(x: number, lowerlimit: number, upperlimit: number) {
+  if (x < lowerlimit) {
+    x = lowerlimit;
+  }
+  if (x > upperlimit) {
+    x = upperlimit;
+  }
+  return x;
 }
