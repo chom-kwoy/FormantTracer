@@ -229,8 +229,8 @@ export class FormantApp {
           const voicingCoeffExponent = 0.5;
           // Validity refers to how vowel-like the segment is
           const validityScore =
-            Math.pow(1 - formantError, formantErrorExponent) *
-            Math.pow(voicingCoeff, voicingCoeffExponent);
+            Math.pow(Math.max(1e-6, 1 - formantError), formantErrorExponent) *
+            Math.pow(Math.max(1e-6, voicingCoeff), voicingCoeffExponent);
           const validity = smoothstep(0.1, 0.6, validityScore);
 
           formantData.push({ formants, validity });

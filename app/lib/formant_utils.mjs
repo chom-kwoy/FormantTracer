@@ -45,6 +45,7 @@ function xcorr_mag(spec_magnitudes, maxlag, N, M, fftModule) {
 
 function levinson(acf, nPoles) {
   let ref = new Float32Array(nPoles);
+  acf[0] = Math.max(1e-10, acf[0]);
   let g = -acf[1] / acf[0];
   let a = Float32Array.from([g]);
   let v = (1 - g * g) * acf[0];
@@ -75,7 +76,7 @@ function levinson(acf, nPoles) {
 
   a = Float32Array.from([1.0, ...a]);
 
-  return [a, v / Math.max(1e-10, acf[0])];
+  return [a, v / acf[0]];
 }
 
 export function formantAnalysis(
