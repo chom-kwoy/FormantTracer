@@ -160,72 +160,42 @@ export class FormantGrid {
       off.ellipse(pt.x, pt.y, pt.r, pt.r, 0, 0, 2 * Math.PI);
       off.fill();
 
-      // Draw connector to next point
-      if (i + 1 < this.trail.length) {
-        const next = this.trail[i + 1];
-        if (next === null) {
-          continue;
-        }
-        const dx = next.x - pt.x;
-        const dy = next.y - pt.y;
-        const rd = next.r - pt.r;
-        const d_sq = dx * dx + dy * dy;
-        const disc = rd * rd * dx * dx - d_sq * (rd * rd - dy * dy);
+      // Draw connector from previous point to current point
+      if (i > 0) {
+        const prev = this.trail[i - 1];
+        if (prev !== null) {
+          const dx = pt.x - prev.x;
+          const dy = pt.y - prev.y;
+          const rd = pt.r - prev.r;
+          const d_sq = dx * dx + dy * dy;
+          const disc = rd * rd * dx * dx - d_sq * (rd * rd - dy * dy);
+          if (disc > 0 && Math.abs(dy) > 0.001) {
+            const sq = Math.sqrt(disc);
+            const a1x = (rd * dx + sq) / d_sq;
+            const a1y = (rd - dx * a1x) / dy;
+            const a2x = (rd * dx - sq) / d_sq;
+            const a2y = (rd - dx * a2x) / dy;
+            off.beginPath();
+            off.moveTo(pt.x - pt.r * a1x, pt.y - pt.r * a1y);
+            off.lineTo(prev.x - prev.r * a1x, prev.y - prev.r * a1y);
+            off.lineTo(prev.x - prev.r * a2x, prev.y - prev.r * a2y);
+            off.lineTo(pt.x - pt.r * a2x, pt.y - pt.r * a2y);
+            off.fill();
 
-        if (disc > 0 && Math.abs(dy) > 0.001) {
-          const sq = Math.sqrt(disc);
-          const a1x = (rd * dx + sq) / d_sq;
-          const a1y = (rd - dx * a1x) / dy;
-          const a2x = (rd * dx - sq) / d_sq;
-          const a2y = (rd - dx * a2x) / dy;
-
-          off.beginPath();
-          off.moveTo(next.x - next.r * a1x, next.y - next.r * a1y);
-          off.lineTo(pt.x - pt.r * a1x, pt.y - pt.r * a1y);
-          off.lineTo(pt.x - pt.r * a2x, pt.y - pt.r * a2y);
-          off.lineTo(next.x - next.r * a2x, next.y - next.r * a2y);
-          off.fill();
-        }
-      }
-    }
-
-    for (let i = 0; i < this.trail.length; i++) {
-      const age = this.trail.length - 1 - i;
-      const fade = Math.pow(this.decayRate, age); // 1.0 = newest, 0.0 = oldest
-      if (fade < 0.01) continue;
-
-      const pt = this.trail[i];
-      if (pt === null) {
-        continue;
-      }
-
-      // Draw connector to next point
-      if (i + 1 < this.trail.length) {
-        const next = this.trail[i + 1];
-        if (next === null) {
-          continue;
-        }
-        const dx = next.x - pt.x;
-        const dy = next.y - pt.y;
-        const rd = next.r - pt.r;
-        const d_sq = dx * dx + dy * dy;
-        const disc = rd * rd * dx * dx - d_sq * (rd * rd - dy * dy);
-
-        if (disc > 0 && Math.abs(dy) > 0.001) {
-          // draw separator line between the two segments
-          // the line should be perpendicular to the direction
-          off.strokeStyle = `rgba(255,255,255,${fade * 0.9})`;
-          off.lineWidth = 1.2;
-          off.beginPath();
-          const len = Math.sqrt(d_sq);
-          const px = -dy / len;
-          const py = dx / len;
-          const w = next.r * 0.5;
-          const a = -3 / Math.sqrt(d_sq);
-          off.moveTo(next.x + dx * a + px * w, next.y + dy * a + py * w);
-          off.lineTo(next.x, next.y);
-          off.lineTo(next.x + dx * a - px * w, next.y + dy * a - py * w);
-          off.stroke();
+            // Draw arrow
+            off.strokeStyle = `rgba(255,255,255,${fade * 0.9})`;
+            off.lineWidth = 1.2;
+            off.beginPath();
+            const len = Math.sqrt(d_sq);
+            const px = -dy / len;
+            const py = dx / len;
+            const w = prev.r * 0.5;
+            const a = -3 / Math.sqrt(d_sq);
+            off.moveTo(pt.x + dx * a + px * w, pt.y + dy * a + py * w);
+            off.lineTo(pt.x, pt.y);
+            off.lineTo(pt.x + dx * a - px * w, pt.y + dy * a - py * w);
+            off.stroke();
+          }
         }
       }
     }
