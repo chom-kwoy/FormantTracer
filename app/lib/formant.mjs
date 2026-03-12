@@ -109,26 +109,33 @@ export function formantAnalysis(
   const result = eig.Solvers.eigenSolve(A, true);
   delete result.info;
 
-  let angles = new Float32Array(nPoles);
-  for (let i = 0; i < nPoles; ++i) {
-    let a = result.eigenvalues.get(i, 0).real();
-    let b = result.eigenvalues.get(i, 0).imag();
-    angles[i] = Math.abs(Math.atan2(b, a));
-  }
-
-  let uniqueAngles = Array.from(new Set(angles)).sort();
-
   let F = [];
-  for (let i = 0; i < uniqueAngles.length; ++i) {
-    F.push((uniqueAngles[i] * sampleRate) / (2 * Math.PI));
+  for (let i = 0; i < nPoles; ++i) {
+    let re = result.eigenvalues.get(i, 0).real();
+    let im = result.eigenvalues.get(i, 0).imag();
+
+    // Skip negative frequencies (conjugate pairs)
+    if (im < 0) continue;
+
+    let angle = Math.atan2(im, re);
+    let freq = (angle * sampleRate) / (2 * Math.PI);
+
+    // Bandwidth filter — reject broad/weak poles
+    let r = Math.sqrt(re * re + im * im);
+    let bandwidth = (-Math.log(r) * sampleRate) / Math.PI;
+    if (bandwidth > 400) continue;
+
+    F.push(freq);
   }
+
+  F.sort((a, b) => a - b);
 
   return [F, error];
 }
 
-export function fft_mag(x, fftModule) {
+export function fft_mag(x, fftModule, minSize = 0) {
   let N = x.length;
-  let M = Math.pow(2, Math.ceil(Math.log2(x.length)));
+  let M = Math.max(minSize, Math.pow(2, Math.ceil(Math.log2(x.length))));
 
   // pad
   for (let i = N; i < M; ++i) {

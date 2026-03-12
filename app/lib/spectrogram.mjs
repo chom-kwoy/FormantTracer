@@ -1,107 +1,135 @@
+import { freqBinSize, sampleRate } from "../constants.js";
+
 export class Spectrogram {
   constructor(canvas) {
     this.canvas = canvas;
     this.canvasCtx = canvas.getContext("2d");
+    this.width = canvas.width;
+    this.height = canvas.height;
+    this.imageData = this.canvasCtx.createImageData(this.width, this.height);
+    this.pixels = this.imageData.data; // Uint8ClampedArray RGBA
+
+    this.windowSize = 300;
+    this.minFreq = 200;
+    this.maxFreq = 5000;
+    this.dynamicRange = 70; // dB
+    this.nyquist = sampleRate / 2;
+
+    // Precompute: for each pixel row, which freq bin(s) to sample
+    // Row 0 = top = maxFreq, row height-1 = bottom = minFreq
+    this.rowToBin = new Float32Array(this.height);
+    for (let row = 0; row < this.height; row++) {
+      const freq =
+        this.maxFreq - (row / this.height) * (this.maxFreq - this.minFreq);
+      this.rowToBin[row] = (freq / this.nyquist) * freqBinSize;
+    }
+
+    // Precompute x positions for each time slot
+    this.slotX = new Float32Array(this.windowSize);
+    for (let i = 0; i < this.windowSize; i++) {
+      this.slotX[i] = (i * this.width) / this.windowSize;
+    }
+
+    // Pre-emphasis: +6 dB/oct relative to 1000 Hz per row
+    this.preemphasis = new Float32Array(this.height);
+    for (let row = 0; row < this.height; row++) {
+      const freq =
+        this.maxFreq - (row / this.height) * (this.maxFreq - this.minFreq);
+      this.preemphasis[row] = 6 * Math.log2(Math.max(freq, 1) / 1000);
+    }
   }
 
   draw(freqDataHistory, formantsHistory) {
-    // Clear spectrum canvas
-    this.canvasCtx.fillStyle = "rgb(0, 0, 0)";
-    this.canvasCtx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+    const beginIndex = Math.max(0, freqDataHistory.length - this.windowSize);
+    const endIndex = freqDataHistory.length;
+    const nFrames = endIndex - beginIndex;
 
-    const windowSize = 300;
-    const minFreq = 200; // Hz
-    const maxFreq = 5000; // Hz
+    // --- Spectrogram via ImageData ---
+    const pixels = this.pixels;
+    pixels.fill(255); // white background
 
-    let beginIndex = Math.max(0, formantsHistory.length - windowSize);
-    let endIndex = formantsHistory.length;
+    // Find global max for dynamic range clamping
+    let globalMax = -Infinity;
+    for (let i = beginIndex; i < endIndex; i++) {
+      const spec = freqDataHistory[i];
+      for (let row = 0; row < this.height; row++) {
+        const bin = this.rowToBin[row];
+        const binLow = bin | 0;
+        const binHigh = Math.min(binLow + 1, freqBinSize - 1);
+        const frac = bin - binLow;
+        const power = spec[binLow] * (1 - frac) + spec[binHigh] * frac;
+        const dB = 10 * Math.log10(power + 1e-20) + this.preemphasis[row];
+        if (dB > globalMax) globalMax = dB;
+      }
+    }
 
-    let lastF1 = null;
-    let lastF2 = null;
-    let lastF3 = null;
-    for (let i = beginIndex; i < endIndex; ++i) {
-      let formants = formantsHistory[i];
+    const floor = globalMax - this.dynamicRange;
 
-      if (formants.length >= 1) {
-        let f1 = formants[0];
+    // Render each column
+    for (let i = beginIndex; i < endIndex; i++) {
+      const spec = freqDataHistory[i];
+      const col = i - beginIndex;
+      const x0 = this.slotX[col] | 0;
+      const x1 =
+        col + 1 < this.windowSize ? this.slotX[col + 1] | 0 : this.width;
 
-        let x = ((i - beginIndex) * this.canvas.width) / windowSize;
-        let y =
-          this.canvas.height -
-          ((f1 - minFreq) / (maxFreq - minFreq)) * this.canvas.height;
+      for (let row = 0; row < this.height; row++) {
+        const bin = this.rowToBin[row];
+        const binLow = bin | 0;
+        const binHigh = Math.min(binLow + 1, freqBinSize - 1);
+        const frac = bin - binLow;
+        const power = spec[binLow] * (1 - frac) + spec[binHigh] * frac;
+        const dB = 10 * Math.log10(power + 1e-20) + this.preemphasis[row];
 
-        if (lastF1 === null) {
-          lastF1 = f1;
+        // Normalize: 1 = black (at globalMax), 0 = white (at floor)
+        const normalized = (dB - floor) / this.dynamicRange;
+        const grey = (255 - Math.max(0, Math.min(1, normalized)) * 255) | 0;
+
+        // Fill all pixels in this column span
+        const rowOffset = row * this.width * 4;
+        for (let x = x0; x < x1; x++) {
+          const idx = rowOffset + x * 4;
+          pixels[idx] = grey;
+          pixels[idx + 1] = grey;
+          pixels[idx + 2] = grey;
+          pixels[idx + 3] = 255;
+        }
+      }
+    }
+
+    this.canvasCtx.putImageData(this.imageData, 0, 0);
+
+    // --- Formant lines (batched per formant) ---
+    const colors = ["rgb(255,50,50)", "rgb(50,255,50)", "rgb(50,50,255)"];
+    const formantBegin = Math.max(0, formantsHistory.length - this.windowSize);
+
+    for (let f = 0; f < 3; f++) {
+      this.canvasCtx.beginPath();
+      this.canvasCtx.strokeStyle = colors[f];
+      this.canvasCtx.lineWidth = 2;
+      let started = false;
+
+      for (let i = formantBegin; i < formantsHistory.length; i++) {
+        const formants = formantsHistory[i];
+        if (formants.length <= f) {
+          started = false;
+          continue;
         }
 
-        // draw line from lastF1 to f1
-        this.canvasCtx.beginPath();
-        this.canvasCtx.moveTo(
-          ((i - 1 - beginIndex) * this.canvas.width) / windowSize,
-          this.canvas.height -
-            ((lastF1 - minFreq) / (maxFreq - minFreq)) * this.canvas.height,
-        );
-        this.canvasCtx.lineTo(x, y);
-        this.canvasCtx.lineWidth = 3;
-        this.canvasCtx.strokeStyle = "rgb(255,50,50)";
-        this.canvasCtx.stroke();
+        const freq = formants[f];
+        const x = ((i - formantBegin) * this.width) / this.windowSize;
+        const y =
+          this.height -
+          ((freq - this.minFreq) / (this.maxFreq - this.minFreq)) * this.height;
 
-        lastF1 = f1;
-      }
-
-      if (formants.length >= 2) {
-        let f2 = formants[1];
-
-        let x = ((i - beginIndex) * this.canvas.width) / windowSize;
-        let y =
-          this.canvas.height -
-          ((f2 - minFreq) / (maxFreq - minFreq)) * this.canvas.height;
-
-        if (lastF2 === null) {
-          lastF2 = f2;
+        if (!started) {
+          this.canvasCtx.moveTo(x, y);
+          started = true;
+        } else {
+          this.canvasCtx.lineTo(x, y);
         }
-
-        // draw line from lastF2 to f2
-        this.canvasCtx.beginPath();
-        this.canvasCtx.moveTo(
-          ((i - 1 - beginIndex) * this.canvas.width) / windowSize,
-          this.canvas.height -
-            ((lastF2 - minFreq) / (maxFreq - minFreq)) * this.canvas.height,
-        );
-        this.canvasCtx.lineTo(x, y);
-        this.canvasCtx.lineWidth = 3;
-        this.canvasCtx.strokeStyle = "rgb(50,255,50)";
-        this.canvasCtx.stroke();
-
-        lastF2 = f2;
       }
-
-      if (formants.length >= 3) {
-        let f3 = formants[2];
-
-        let x = ((i - beginIndex) * this.canvas.width) / windowSize;
-        let y =
-          this.canvas.height -
-          ((f3 - minFreq) / (maxFreq - minFreq)) * this.canvas.height;
-
-        if (lastF3 === null) {
-          lastF3 = f3;
-        }
-
-        // draw line from lastF3 to f3
-        this.canvasCtx.beginPath();
-        this.canvasCtx.moveTo(
-          ((i - 1 - beginIndex) * this.canvas.width) / windowSize,
-          this.canvas.height -
-            ((lastF3 - minFreq) / (maxFreq - minFreq)) * this.canvas.height,
-        );
-        this.canvasCtx.lineTo(x, y);
-        this.canvasCtx.lineWidth = 3;
-        this.canvasCtx.strokeStyle = "rgb(50,50,255)";
-        this.canvasCtx.stroke();
-
-        lastF3 = f3;
-      }
+      this.canvasCtx.stroke();
     }
   }
 }

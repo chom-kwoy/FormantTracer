@@ -1,5 +1,6 @@
 import {
   elemsPerWindow,
+  fftSize,
   formantCeiling,
   formantElemsPerWindow,
   formantFloor,
@@ -52,7 +53,6 @@ class FormantProcessor extends AudioWorkletProcessor {
       this.fftModule = fftModule;
       this.librariesInitialized = true;
 
-      this.pffft_runner = fftModule._pffft_runner_new(freqBinSize, 8);
       this.dataPtr = fftModule._malloc(freqBinSize * 8);
       this.dataHeap = new Uint8Array(
         fftModule.HEAPU8.buffer,
@@ -104,7 +104,11 @@ class FormantProcessor extends AudioWorkletProcessor {
     }
 
     // Run formant analysis
-    let [spectrum, _, M] = fft_mag(this.timeData, this.fftModule);
+    let [spectrum, _, M] = fft_mag(
+      Array.from(this.timeData), // expects a regular array
+      this.fftModule,
+      fftSize,
+    );
     let [F, formantError] = formantAnalysis(
       spectrum,
       freqBinSize * 2,

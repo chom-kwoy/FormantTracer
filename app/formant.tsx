@@ -1,6 +1,8 @@
 "use client";
 import eig from "eigen";
 
+import { FormantTracker } from "@/app/lib/formant_tracker";
+
 import {
   elemsPerWindow,
   formantElemsPerWindow,
@@ -10,7 +12,6 @@ import {
   windowSize,
 } from "./constants.js";
 import { FormantGrid } from "./lib/formant_grid.mjs";
-import { KalmanFilter } from "./lib/kalman.mjs";
 import { pffft_simd } from "./lib/pffft.simd.mjs";
 import { Spectrogram } from "./lib/spectrogram.mjs";
 import { Spectrum } from "./lib/spectrum.mjs";
@@ -145,7 +146,7 @@ async function start() {
     );
     const spectrum = new Spectrum(specCanvas, fftModule, freqBinSize);
     const spectrogram = new Spectrogram(spectrogramCanvas);
-    const kalmanFilter = new KalmanFilter(eig);
+    const tracker = new FormantTracker();
 
     let curIdx = 0;
     let startTime: number | undefined = undefined;
@@ -192,24 +193,25 @@ async function start() {
         }
       });
 
-      for (let i = 0; i < newFormants.length; ++i) {
-        formantsHistory.push(newFormants[i]);
-      }
-
       for (let i = 0; i < newAvgAmpls.length; ++i) {
         const avgAmpl = newAvgAmpls[i];
         const formants = newFormants[i];
 
         // Kalman filter
-        if (formants.length >= 2) {
-          [formants[0], formants[1]] = kalmanFilter.add_and_predict(
-            formants[0],
-            formants[1],
-          );
-        }
+        const filteredFormants = tracker.update(Array.from(formants));
+        formantsHistory.push(newFormants[i]);
+        // formantsHistory.push(filteredFormants);
+        console.log("newformants", Array.from(newFormants[i]));
+        console.log("filtered", filteredFormants);
 
-        vowelSpace.draw(formants, avgAmpl, elapsed);
-        spectrum.draw(freqData, maxF0, formants, logNoiseFloor, sampleRate);
+        vowelSpace.draw(filteredFormants, avgAmpl, elapsed);
+        spectrum.draw(
+          freqData,
+          maxF0,
+          filteredFormants,
+          logNoiseFloor,
+          sampleRate,
+        );
       }
 
       console.log(freqDataHistory.length);

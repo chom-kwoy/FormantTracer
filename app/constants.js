@@ -1,7 +1,8 @@
 export const sampleRate = 11000;
-export const windowSize = 512;
+export const windowSize = 256;
+export const fftSize = 1024;
 export const nWindows = 64;
-export const freqBinSize = windowSize / 2;
+export const freqBinSize = fftSize / 2;
 export const formantElemsPerWindow = 8;
 export const elemsPerWindow = formantElemsPerWindow + freqBinSize;
 export const interval = 32;
