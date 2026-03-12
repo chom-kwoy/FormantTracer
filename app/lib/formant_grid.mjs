@@ -227,9 +227,11 @@ export class FormantGrid {
           const len = Math.sqrt(d_sq);
           const px = -dy / len;
           const py = dx / len;
-          const w = next.r * 0.4;
-          off.moveTo(next.x + px * w, next.y + py * w);
-          off.lineTo(next.x - px * w, next.y - py * w);
+          const w = next.r * 0.5;
+          const a = -3 / Math.sqrt(d_sq);
+          off.moveTo(next.x + dx * a + px * w, next.y + dy * a + py * w);
+          off.lineTo(next.x, next.y);
+          off.lineTo(next.x + dx * a - px * w, next.y + dy * a - py * w);
           off.stroke();
         }
       }
