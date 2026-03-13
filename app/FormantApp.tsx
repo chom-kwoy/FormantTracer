@@ -154,7 +154,6 @@ export class FormantApp {
     spectrogram2.onHover((time, freq) => {
       // time: seconds relative to now (negative = in the past, e.g. -2.3s)
       // freq: Hz, clamped to [minFreq, maxFreq]
-      console.log(time, freq);
     });
 
     const drawRefresh = (timeStamp: number) => {
@@ -284,7 +283,7 @@ export class FormantApp {
         }
       }
 
-      spectrogram.draw(
+      spectrogram.update(
         freqDataHistory,
         origFormantsHistory,
         formantsHistory,
@@ -292,7 +291,9 @@ export class FormantApp {
         [],
         false,
       );
-      spectrogram2.draw(
+      spectrogram.draw();
+
+      spectrogram2.update(
         freqDataHistory,
         origFormantsHistory,
         formantsHistory,
@@ -300,6 +301,7 @@ export class FormantApp {
         [validityHistory],
         true,
       );
+      spectrogram2.draw();
 
       console.debug("draw elapsed:", (performance.now() - t0).toFixed(2), "ms");
     };

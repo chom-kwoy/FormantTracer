@@ -1,6 +1,6 @@
 import { DeblurredCanvas } from "@/app/lib/types";
 
-import { freqBinSize, sampleRate } from "../constants.js";
+import { freqBinSize, sampleRate, stftInterval } from "../constants.js";
 
 export type SpectrogramHoverCallback = (
   time: number | null,
@@ -27,7 +27,18 @@ export class Spectrogram {
   private preemphasis: Float32Array;
 
   private hoverCallback: SpectrogramHoverCallback | null;
-  private currentFrameCount: number;
+
+  // Cached state written by update(), consumed by draw()
+  private renderNFrames: number;
+  private renderFloor: number;
+  private renderScale: number;
+  private renderOrigFormantsHistory: number[][];
+  private renderFormantsHistory: number[][];
+  private renderValidityHistory: number[];
+  private renderOtherHistories: number[][];
+  private renderDrawFilteredFormants: boolean;
+
+  private hoveredPoint: { time: number; freq: number } | null = null;
 
   private boundOnMouseMove: (e: MouseEvent) => void;
   private boundOnMouseLeave: () => void;
@@ -71,7 +82,15 @@ export class Spectrogram {
     }
 
     this.hoverCallback = null;
-    this.currentFrameCount = 0;
+
+    this.renderNFrames = 0;
+    this.renderFloor = 0;
+    this.renderScale = 0;
+    this.renderOrigFormantsHistory = [];
+    this.renderFormantsHistory = [];
+    this.renderValidityHistory = [];
+    this.renderOtherHistories = [];
+    this.renderDrawFilteredFormants = false;
 
     this.boundOnMouseMove = this.onMouseMove.bind(this);
     this.boundOnMouseLeave = this.onMouseLeave.bind(this);
@@ -98,29 +117,31 @@ export class Spectrogram {
     const py = cssY * (this.height / rect.height);
 
     // Frequency: linear interpolation between minFreq (bottom) and maxFreq (top)
-    const freq =
+    let freq =
       this.maxFreq - (py / this.height) * (this.maxFreq - this.minFreq);
+    freq = Math.max(this.minFreq, Math.min(this.maxFreq, freq));
 
     // Time: px/width maps to [0, windowSize) slots; slot 0 = oldest visible frame
-    const nFrames = Math.min(this.currentFrameCount, this.windowSize);
-    const slotFrac = (px / this.width) * nFrames;
+    const slotFrac = (px / this.width) * this.renderNFrames;
     // Slot index relative to the oldest visible frame → offset from newest (negative seconds)
-    const secondsPerFrame = 1 / (sampleRate / /* hop assumed in parent */ 512);
-    const time = (slotFrac - nFrames) * secondsPerFrame;
+    const secondsPerFrame = stftInterval / sampleRate;
+    const time = (slotFrac - this.renderNFrames) * secondsPerFrame;
+
+    this.hoveredPoint = { time, freq };
+    this.draw();
 
     if (!this.hoverCallback) return;
 
-    this.hoverCallback(
-      time,
-      Math.max(this.minFreq, Math.min(this.maxFreq, freq)),
-    );
+    this.hoverCallback(time, freq);
   }
 
   private onMouseLeave(): void {
+    this.hoveredPoint = null;
+    this.draw();
     this.hoverCallback?.(null, null);
   }
 
-  draw(
+  update(
     freqDataHistory: Float32Array[],
     origFormantsHistory: number[][],
     formantsHistory: number[][],
@@ -131,7 +152,6 @@ export class Spectrogram {
     const beginIndex = Math.max(0, freqDataHistory.length - this.windowSize);
     const endIndex = freqDataHistory.length;
     const nFrames = endIndex - beginIndex;
-    this.currentFrameCount = freqDataHistory.length;
 
     // --- Single pass: compute all dB values and find global max ---
     if (!this.dbBuffer || this.dbBuffer.length < nFrames * this.height) {
@@ -154,9 +174,6 @@ export class Spectrogram {
       }
     }
 
-    const floor = globalMax - this.dynamicRange;
-    const scale = 255 / this.dynamicRange;
-
     // --- Build grey LUT (256 entries mapping quantized dB to packed RGBA) ---
     if (!this.greyLUT) {
       this.greyLUT = new Uint32Array(256);
@@ -167,12 +184,36 @@ export class Spectrogram {
       this.greyLUT[i] = (255 << 24) | (g << 16) | (g << 8) | g;
     }
 
+    // Store derived render parameters
+    this.renderNFrames = nFrames;
+    this.renderFloor = globalMax - this.dynamicRange;
+    this.renderScale = 255 / this.dynamicRange;
+    this.renderOrigFormantsHistory = origFormantsHistory;
+    this.renderFormantsHistory = formantsHistory;
+    this.renderValidityHistory = validityHistory;
+    this.renderOtherHistories = otherHistories;
+    this.renderDrawFilteredFormants = drawFilteredFormants;
+  }
+
+  draw(): void {
+    const nFrames = this.renderNFrames;
+    const floor = this.renderFloor;
+    const scale = this.renderScale;
+    const origFormantsHistory = this.renderOrigFormantsHistory;
+    const formantsHistory = this.renderFormantsHistory;
+    const validityHistory = this.renderValidityHistory;
+    const otherHistories = this.renderOtherHistories;
+    const drawFilteredFormants = this.renderDrawFilteredFormants;
+
+    const dbBuf = this.dbBuffer!;
+    const greyLUT = this.greyLUT!;
+
     // --- Render via Uint32Array (one write per pixel) ---
     const pixels32 = new Uint32Array(this.imageData.data.buffer);
     const white = (255 << 24) | (255 << 16) | (255 << 8) | 255;
     pixels32.fill(white);
 
-    idx = 0;
+    let idx = 0;
     for (let col = 0; col < nFrames; col++) {
       const x0 = this.slotX[col] | 0;
       const x1 =
@@ -182,7 +223,7 @@ export class Spectrogram {
       for (let row = 0; row < this.height; row++) {
         const dB = dbBuf[idx++];
         const gi = ((dB - floor) * scale) | 0;
-        const grey = this.greyLUT[gi > 255 ? 255 : gi < 0 ? 0 : gi];
+        const grey = greyLUT[gi > 255 ? 255 : gi < 0 ? 0 : gi];
         const rowOffset = row * this.width + x0;
 
         for (let x = 0; x < colWidth; x++) {
@@ -296,6 +337,39 @@ export class Spectrogram {
       ctx.lineWidth = 2 * dpr;
       ctx.lineCap = "round";
       drawLine(otherHistories[i], this.width, this.height, this.windowSize);
+    }
+
+    // draw crosshairs on hovered point
+    if (this.hoveredPoint) {
+      const { time, freq } = this.hoveredPoint;
+
+      const secondsPerFrame = stftInterval / sampleRate;
+
+      const slotFrac = time / secondsPerFrame + this.renderNFrames;
+      const x = (slotFrac / this.renderNFrames) * this.width;
+      const y =
+        this.height -
+        ((freq - this.minFreq) / (this.maxFreq - this.minFreq)) * this.height;
+
+      ctx.strokeStyle = "rgba(255,0,255,1.0)";
+      ctx.lineWidth = 1.0 * dpr;
+      ctx.font = `${10 * dpr}px sans-serif`;
+      ctx.textBaseline = "bottom";
+      ctx.textAlign = "left";
+      ctx.fillStyle = "rgba(255,255,255,1.0)";
+
+      // draw horizontal line
+      ctx.beginPath();
+      ctx.moveTo(0, y);
+      ctx.lineTo(this.width, y);
+      ctx.stroke();
+      ctx.fillText(`${time.toFixed(2)}s`, 0, y);
+
+      // draw vertical line
+      ctx.beginPath();
+      ctx.moveTo(x, 0);
+      ctx.lineTo(x, this.height);
+      ctx.stroke();
     }
   }
 }
