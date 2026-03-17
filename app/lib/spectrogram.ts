@@ -353,23 +353,33 @@ export class Spectrogram {
 
       ctx.strokeStyle = "rgba(255,0,255,1.0)";
       ctx.lineWidth = 1.0 * dpr;
-      ctx.font = `${10 * dpr}px sans-serif`;
+      const fontSize = 10 * dpr;
+      ctx.font = `${fontSize}px sans-serif`;
       ctx.textBaseline = "bottom";
       ctx.textAlign = "left";
-      ctx.fillStyle = "rgba(255,255,255,1.0)";
 
       // draw horizontal line
       ctx.beginPath();
       ctx.moveTo(0, y);
       ctx.lineTo(this.width, y);
       ctx.stroke();
-      ctx.fillText(`${time.toFixed(2)}s`, 0, y);
 
       // draw vertical line
       ctx.beginPath();
       ctx.moveTo(x, 0);
       ctx.lineTo(x, this.height);
       ctx.stroke();
+
+      // draw background for time label
+      ctx.fillStyle = "rgba(0,0,0,1.0)";
+      ctx.beginPath();
+      ctx.rect(x, this.height - fontSize, 3 * fontSize, fontSize);
+      ctx.rect(0, y - fontSize, 4 * fontSize, fontSize);
+      ctx.fill();
+
+      ctx.fillStyle = "rgba(255,255,255,1.0)";
+      ctx.fillText(`${time.toFixed(2)}s`, x, this.height);
+      ctx.fillText(`${freq.toFixed(0)}Hz`, 0, y);
     }
   }
 }
