@@ -150,9 +150,12 @@ export class FormantApp {
     let f0Sum = 0;
     let f0Count = 0;
 
+    let pointerTime: number | null = null;
     spectrogram2.onHover((time, freq) => {
       // time: seconds relative to now (negative = in the past, e.g. -2.3s)
       // freq: Hz, clamped to [minFreq, maxFreq]
+      pointerTime = time;
+      vowelSpace.draw(this.isMale, pointerTime);
     });
 
     const drawRefresh = (timeStamp: number) => {
@@ -267,15 +270,8 @@ export class FormantApp {
         formantsHistory.push(filteredFormants);
         confidenceHistory.push(filterConfidence);
 
-        const doDraw = i === newAvgAmpls.length - 1;
-        vowelSpace.draw(
-          filteredFormants,
-          newAvgAmpls[i],
-          elapsed,
-          this.isMale,
-          doDraw,
-        );
-        if (doDraw) {
+        vowelSpace.update(filteredFormants, newAvgAmpls[i], elapsed);
+        if (i === newAvgAmpls.length - 1) {
           spectrum.draw(
             freqData,
             maxF0,
@@ -285,6 +281,8 @@ export class FormantApp {
           );
         }
       }
+
+      vowelSpace.draw(this.isMale, pointerTime);
 
       spectrogram.update(
         freqDataHistory,
