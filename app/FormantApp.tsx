@@ -29,6 +29,7 @@ export class FormantApp {
   private readonly spectrumCanvas: DeblurredCanvas;
   private readonly spectrogramCanvas: DeblurredCanvas;
   private readonly spectrogram2Canvas: DeblurredCanvas;
+  private readonly startBtn: HTMLButtonElement;
 
   constructor(isMale: boolean) {
     this.isMale = isMale;
@@ -44,15 +45,14 @@ export class FormantApp {
     this.spectrogram2Canvas = deblurCanvas(
       document.getElementById("spectrogram2") as HTMLCanvasElement,
     );
+    this.startBtn = document.getElementById("startBtn") as HTMLButtonElement;
   }
 
   setIsMale(isMale: boolean) {
     this.isMale = isMale;
   }
 
-  async toggle(useMic: boolean, filePath: string | null) {
-    const btn = document.getElementById("startBtn") as HTMLButtonElement;
-
+  async toggle(useMic: boolean, filePath: string | File | null) {
     if (!this.isPlaying) {
       if (!this.audioCtx) {
         await this.start(useMic, filePath);
@@ -63,7 +63,7 @@ export class FormantApp {
         }
       }
       this.isPlaying = true;
-      btn.textContent = "Pause";
+      this.startBtn.textContent = "Pause";
     } else {
       if (this.audioCtx) {
         await this.audioCtx.suspend();
@@ -73,11 +73,29 @@ export class FormantApp {
       }
       this.animFrameId = null;
       this.isPlaying = false;
-      btn.textContent = "Resume";
+      this.startBtn.textContent = "Resume";
     }
   }
 
-  private async start(useMic: boolean, filePath: string | null) {
+  async reset() {
+    if (this.audioCtx) {
+      await this.audioCtx.close();
+      this.audioCtx = null;
+    }
+    if (this.animFrameId !== null) {
+      cancelAnimationFrame(this.animFrameId);
+    }
+    this.animFrameId = null;
+    this.isPlaying = false;
+    this.drawRefreshFn = null;
+    this.startBtn.textContent = "Start";
+    this.vowelCanvas.getContext("2d")!.reset();
+    this.spectrumCanvas.getContext("2d")!.reset();
+    this.spectrogramCanvas.getContext("2d")!.reset();
+    this.spectrogram2Canvas.getContext("2d")!.reset();
+  }
+
+  private async start(useMic: boolean, file: string | File | null) {
     const fftModule = await pffft_simd();
     await eig.ready;
     console.log("FFT window length (s): ", windowSize / sampleRate, "s");
@@ -112,15 +130,15 @@ export class FormantApp {
       source.connect(iirfilter);
       iirfilter.connect(analyser);
     } else {
-      if (!filePath) {
-        throw new Error("No file path provided");
+      if (!file) {
+        throw new Error("No file provided");
       }
-      const sample = await setupSample(this.audioCtx, filePath);
+      const sample = await getFile(this.audioCtx, file);
       const source = playSourceNode(this.audioCtx, sample);
       source.connect(iirfilter);
       iirfilter.connect(formantNode);
       iirfilter.connect(analyser);
-      source.connect(this.audioCtx.destination);
+      iirfilter.connect(this.audioCtx.destination);
     }
 
     const freqBinSize = analyser.frequencyBinCount;
@@ -318,9 +336,14 @@ export class FormantApp {
 }
 
 // fetch the audio file and decode the data
-async function getFile(audioContext: AudioContext, filepath: string) {
-  const response = await fetch(filepath);
-  const arrayBuffer = await response.arrayBuffer();
+async function getFile(audioContext: AudioContext, file: string | File) {
+  let arrayBuffer;
+  if (file instanceof File) {
+    arrayBuffer = await file.arrayBuffer();
+  } else {
+    const response = await fetch(file);
+    arrayBuffer = await response.arrayBuffer();
+  }
   return await audioContext.decodeAudioData(arrayBuffer);
 }
 
@@ -331,10 +354,6 @@ function playSourceNode(audioContext: AudioContext, audioBuffer: AudioBuffer) {
   soundSource.loop = true;
   soundSource.start();
   return soundSource;
-}
-
-async function setupSample(audioCtx: AudioContext, filePath: string) {
-  return await getFile(audioCtx, filePath);
 }
 
 function smoothstep(edge0: number, edge1: number, x: number) {

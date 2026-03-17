@@ -385,7 +385,7 @@ export class Spectrogram {
         ctx.fillStyle = "rgba(0,0,0,0.7)";
 
         const padding = 2 * dpr;
-        const timeLabel = `${time.toFixed(2)}s`;
+        const timeLabel = `${time.toFixed(3)}s`;
         const freqLabel = `${freq.toFixed(0)}Hz`;
         const timeLabelMetrics = ctx.measureText(timeLabel);
         const freqLabelMetrics = ctx.measureText(freqLabel);
@@ -406,8 +406,8 @@ export class Spectrogram {
         ctx.fill();
 
         ctx.fillStyle = "rgba(255,255,255,1.0)";
-        ctx.fillText(`${time.toFixed(2)}s`, pointerX + padding, this.height);
-        ctx.fillText(`${freq.toFixed(0)}Hz`, padding, pointerY);
+        ctx.fillText(timeLabel, pointerX + padding, this.height);
+        ctx.fillText(freqLabel, padding, pointerY);
       }
     }
   }
