@@ -122,7 +122,7 @@ export class Spectrogram {
     freq = Math.max(this.minFreq, Math.min(this.maxFreq, freq));
 
     // Time: px/width maps to [0, windowSize) slots; slot 0 = oldest visible frame
-    const slotFrac = (px / this.width) * this.renderNFrames;
+    const slotFrac = (px / this.width) * this.windowSize;
     // Slot index relative to the oldest visible frame → offset from newest (negative seconds)
     const secondsPerFrame = stftInterval / sampleRate;
     const time = (slotFrac - this.renderNFrames) * secondsPerFrame;
@@ -343,70 +343,72 @@ export class Spectrogram {
     if (this.hoveredPoint) {
       const { time, freq } = this.hoveredPoint;
 
-      const secondsPerFrame = stftInterval / sampleRate;
+      if (time < 0) {
+        const secondsPerFrame = stftInterval / sampleRate;
 
-      const slotFrac = time / secondsPerFrame + this.renderNFrames;
-      const x = (slotFrac / this.renderNFrames) * this.width;
-      const y =
-        this.height -
-        ((freq - this.minFreq) / (this.maxFreq - this.minFreq)) * this.height;
+        const slotFrac = time / secondsPerFrame + this.renderNFrames;
+        const pointerX = (slotFrac / this.windowSize) * this.width;
+        const pointerY =
+          this.height -
+          ((freq - this.minFreq) / (this.maxFreq - this.minFreq)) * this.height;
 
-      const drawLines = () => {
-        // draw horizontal line
+        const drawLines = () => {
+          // draw horizontal line
+          ctx.beginPath();
+          ctx.moveTo(0, pointerY);
+          ctx.lineTo(this.width, pointerY);
+          ctx.stroke();
+
+          // draw vertical line
+          ctx.beginPath();
+          ctx.moveTo(pointerX, 0);
+          ctx.lineTo(pointerX, this.height);
+          ctx.stroke();
+        };
+
+        ctx.save();
+        ctx.globalCompositeOperation = "difference";
+        ctx.strokeStyle = "rgba(255,255,0,1.0)";
+        ctx.lineWidth = 2.5 * dpr;
+        drawLines();
+        ctx.restore();
+
+        ctx.strokeStyle = "rgba(0,255,255,1.0)";
+        ctx.lineWidth = 1.1 * dpr;
+        drawLines();
+
+        // draw background for time label
+        const fontSize = 12 * dpr;
+        ctx.font = `${fontSize}px sans-serif`;
+        ctx.textBaseline = "bottom";
+        ctx.textAlign = "left";
+        ctx.fillStyle = "rgba(0,0,0,0.7)";
+
+        const padding = 2 * dpr;
+        const timeLabel = `${time.toFixed(2)}s`;
+        const freqLabel = `${freq.toFixed(0)}Hz`;
+        const timeLabelMetrics = ctx.measureText(timeLabel);
+        const freqLabelMetrics = ctx.measureText(freqLabel);
+
         ctx.beginPath();
-        ctx.moveTo(0, y);
-        ctx.lineTo(this.width, y);
-        ctx.stroke();
+        ctx.rect(
+          pointerX,
+          this.height - timeLabelMetrics.fontBoundingBoxAscent,
+          timeLabelMetrics.width + padding * 2,
+          timeLabelMetrics.fontBoundingBoxAscent,
+        );
+        ctx.rect(
+          0,
+          pointerY - freqLabelMetrics.fontBoundingBoxAscent,
+          freqLabelMetrics.width + padding * 2,
+          freqLabelMetrics.fontBoundingBoxAscent,
+        );
+        ctx.fill();
 
-        // draw vertical line
-        ctx.beginPath();
-        ctx.moveTo(x, 0);
-        ctx.lineTo(x, this.height);
-        ctx.stroke();
-      };
-
-      ctx.save();
-      ctx.globalCompositeOperation = "difference";
-      ctx.strokeStyle = "rgba(255,255,0,1.0)";
-      ctx.lineWidth = 2.5 * dpr;
-      drawLines();
-      ctx.restore();
-
-      ctx.strokeStyle = "rgba(0,255,255,1.0)";
-      ctx.lineWidth = 1.1 * dpr;
-      drawLines();
-
-      // draw background for time label
-      const fontSize = 12 * dpr;
-      ctx.font = `${fontSize}px sans-serif`;
-      ctx.textBaseline = "bottom";
-      ctx.textAlign = "left";
-      ctx.fillStyle = "rgba(0,0,0,0.7)";
-
-      const padding = 2 * dpr;
-      const timeLabel = `${time.toFixed(2)}s`;
-      const freqLabel = `${freq.toFixed(0)}Hz`;
-      const timeLabelMetrics = ctx.measureText(timeLabel);
-      const freqLabelMetrics = ctx.measureText(freqLabel);
-
-      ctx.beginPath();
-      ctx.rect(
-        x,
-        this.height - timeLabelMetrics.fontBoundingBoxAscent,
-        timeLabelMetrics.width + padding * 2,
-        timeLabelMetrics.fontBoundingBoxAscent,
-      );
-      ctx.rect(
-        0,
-        y - freqLabelMetrics.fontBoundingBoxAscent,
-        freqLabelMetrics.width + padding * 2,
-        freqLabelMetrics.fontBoundingBoxAscent,
-      );
-      ctx.fill();
-
-      ctx.fillStyle = "rgba(255,255,255,1.0)";
-      ctx.fillText(`${time.toFixed(2)}s`, x + padding, this.height);
-      ctx.fillText(`${freq.toFixed(0)}Hz`, padding, y);
+        ctx.fillStyle = "rgba(255,255,255,1.0)";
+        ctx.fillText(`${time.toFixed(2)}s`, pointerX + padding, this.height);
+        ctx.fillText(`${freq.toFixed(0)}Hz`, padding, pointerY);
+      }
     }
   }
 }
