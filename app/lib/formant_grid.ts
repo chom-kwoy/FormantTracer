@@ -341,25 +341,27 @@ export class FormantGrid {
           const f2Text = `F2=${pt.F2.toFixed(0)}Hz`;
           const f1Metrics = ctx.measureText(f1Text);
           const f2Metrics = ctx.measureText(f2Text);
-          const pad = 4.0;
           const originX = pt.x + pt.r + 5;
           const originY = pt.y + pt.r;
+          const hpad = 4.0;
+          const vpad = 2.0;
 
-          ctx.fillStyle = "rgba(0,0,0,0.8)";
+          ctx.fillStyle = "rgba(0,0,0,0.6)";
           ctx.beginPath();
           ctx.rect(
             originX,
-            originY - f1Metrics.fontBoundingBoxAscent,
-            Math.max(f1Metrics.width, f2Metrics.width) + pad * 2,
+            originY - f1Metrics.fontBoundingBoxAscent - vpad,
+            Math.max(f1Metrics.width, f2Metrics.width) + hpad * 2,
             f1Metrics.fontBoundingBoxAscent +
               15 +
-              f2Metrics.fontBoundingBoxDescent,
+              f2Metrics.fontBoundingBoxDescent +
+              vpad * 2,
           );
           ctx.fill();
 
           ctx.fillStyle = "rgba(255,255,255,1.0)";
-          ctx.fillText(f1Text, originX + pad, originY);
-          ctx.fillText(f2Text, originX + pad, originY + 15);
+          ctx.fillText(f1Text, originX + hpad, originY);
+          ctx.fillText(f2Text, originX + hpad, originY + 15);
         }
       }
     }

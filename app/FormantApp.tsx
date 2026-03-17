@@ -58,14 +58,19 @@ export class FormantApp {
         await this.start(useMic, filePath);
       } else {
         await this.audioCtx.resume();
-        if (this.drawRefreshFn)
+        if (this.drawRefreshFn) {
           this.animFrameId = requestAnimationFrame(this.drawRefreshFn);
+        }
       }
       this.isPlaying = true;
       btn.textContent = "Pause";
     } else {
-      if (this.audioCtx) await this.audioCtx.suspend();
-      if (this.animFrameId !== null) cancelAnimationFrame(this.animFrameId);
+      if (this.audioCtx) {
+        await this.audioCtx.suspend();
+      }
+      if (this.animFrameId !== null) {
+        cancelAnimationFrame(this.animFrameId);
+      }
       this.animFrameId = null;
       this.isPlaying = false;
       btn.textContent = "Resume";
