@@ -29,6 +29,7 @@ export default function FormantTracer() {
           alert("An unknown error occurred.");
         }
       }
+      await appRef.current.reset();
     }
   };
 
