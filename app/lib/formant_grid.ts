@@ -12,6 +12,8 @@ interface TrailPoint {
   r: number;
   hue: number;
   elapsed: number;
+  F1: number;
+  F2: number;
 }
 
 const VOWELS: VowelReference[] = [
@@ -108,7 +110,15 @@ export class FormantGrid {
       const r = Math.sqrt(Math.max(1, 20 * (3 + Math.log10(avgAmpl))));
       const hue = elapsed * 0.2;
 
-      this.trail.push({ x, y, r, hue, elapsed });
+      this.trail.push({
+        x,
+        y,
+        r,
+        hue,
+        elapsed,
+        F1: F_filtered[0],
+        F2: F_filtered[1],
+      });
     } else if (F_filtered.length === 0) {
       this.trail.push(null);
     }
@@ -254,34 +264,6 @@ export class FormantGrid {
       }
     }
 
-    // highlight pointer
-    for (let i = 0; i < this.trail.length; i++) {
-      const pt = this.trail[i];
-      if (pt === null) {
-        continue;
-      }
-
-      const nextPt = this.trail[i + 1] ?? null;
-      const isNextDead =
-        nextPt !== null &&
-        absPointerTime !== null &&
-        nextPt.elapsed > absPointerTime;
-      const isHead =
-        absPointerTime === null
-          ? i === this.trail.length - 1
-          : pt.elapsed <= absPointerTime && isNextDead;
-
-      if (isHead) {
-        off.strokeStyle = "#ff0000";
-        off.lineWidth = 2;
-
-        // Draw dot outline
-        off.beginPath();
-        off.ellipse(pt.x, pt.y, pt.r, pt.r, 0, 0, 2 * Math.PI);
-        off.stroke();
-      }
-    }
-
     off.globalAlpha = 1.0;
     ctx.drawImage(
       this.offCanvas,
@@ -324,5 +306,62 @@ export class FormantGrid {
       ctx.fillText(ref.vowel, x + 10, y - 10);
     }
     ctx.restore();
+
+    // highlight pointer
+    for (let i = 0; i < this.trail.length; i++) {
+      const pt = this.trail[i];
+      if (pt === null) {
+        continue;
+      }
+
+      const nextPt = this.trail[i + 1] ?? null;
+      const isNextDead =
+        nextPt !== null &&
+        absPointerTime !== null &&
+        nextPt.elapsed > absPointerTime;
+      const isHead =
+        absPointerTime === null
+          ? i === this.trail.length - 1
+          : pt.elapsed <= absPointerTime && isNextDead;
+
+      if (isHead) {
+        ctx.strokeStyle = "#ff0000";
+        ctx.lineWidth = 2;
+
+        // Draw dot outline
+        ctx.beginPath();
+        ctx.ellipse(pt.x, pt.y, pt.r, pt.r, 0, 0, 2 * Math.PI);
+        ctx.stroke();
+
+        if (absPointerTime !== null) {
+          ctx.font = `12px sans-serif`;
+          ctx.textBaseline = "bottom";
+          ctx.textAlign = "left";
+          const f1Text = `F1=${pt.F1.toFixed(0)}Hz`;
+          const f2Text = `F2=${pt.F2.toFixed(0)}Hz`;
+          const f1Metrics = ctx.measureText(f1Text);
+          const f2Metrics = ctx.measureText(f2Text);
+          const pad = 4.0;
+          const originX = pt.x + pt.r + 5;
+          const originY = pt.y + pt.r;
+
+          ctx.fillStyle = "rgba(0,0,0,0.8)";
+          ctx.beginPath();
+          ctx.rect(
+            originX,
+            originY - f1Metrics.fontBoundingBoxAscent,
+            Math.max(f1Metrics.width, f2Metrics.width) + pad * 2,
+            f1Metrics.fontBoundingBoxAscent +
+              15 +
+              f2Metrics.fontBoundingBoxDescent,
+          );
+          ctx.fill();
+
+          ctx.fillStyle = "rgba(255,255,255,1.0)";
+          ctx.fillText(f1Text, originX + pad, originY);
+          ctx.fillText(f2Text, originX + pad, originY + 15);
+        }
+      }
+    }
   }
 }
