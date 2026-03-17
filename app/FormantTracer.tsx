@@ -9,12 +9,12 @@ export default function FormantTracer() {
   const [isRecording, setIsRecording] = useState<boolean>(false);
   const [isMale, setIsMale] = useState<boolean>(true);
 
-  const handleClick = () => {
+  const handleClick = async () => {
     if (!appRef.current) {
       appRef.current = new FormantApp(isMale);
     }
     try {
-      appRef.current.toggle(isRecording, audioFile ?? "kawuy.mp3");
+      await appRef.current.toggle(isRecording, audioFile ?? "kawuy.mp3");
     } catch (error) {
       if (error instanceof DOMException) {
         if (error.name === "NotAllowedError") {
