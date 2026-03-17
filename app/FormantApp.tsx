@@ -139,7 +139,6 @@ export class FormantApp {
     const tracker = new FormantTracker();
 
     let curIdx = 0;
-    let startTime: number | undefined = undefined;
     const formantsHistory: number[][] = [];
     const origFormantsHistory: number[][] = [];
     const confidenceHistory: number[][] = [];
@@ -160,11 +159,9 @@ export class FormantApp {
       this.animFrameId = requestAnimationFrame(drawRefresh);
       const t0 = performance.now();
 
-      if (startTime === undefined) startTime = timeStamp;
-      const elapsed = timeStamp - startTime;
-
       analyser.getFloatFrequencyData(freqData);
 
+      const newIndices: number[] = [];
       const newAvgAmpls: number[] = [];
       const newFormants11: number[][] = [];
       const newFormantErrors11: number[] = [];
@@ -191,6 +188,8 @@ export class FormantApp {
           }
 
           if (formantIdx === curIdx) {
+            newIndices.push(formantIdx);
+
             // extract values from the buffer
             const avgAmpl = curPart.shift()!;
             newAvgAmpls.push(avgAmpl);
@@ -224,7 +223,11 @@ export class FormantApp {
       });
 
       // Process the retrieved data and update visualizations
-      for (let i = 0; i < newAvgAmpls.length; ++i) {
+      for (let i = 0; i < newIndices.length; ++i) {
+        const frameIdx = newIndices[i];
+        // elapsed time from the beginning of the recording, in ms
+        const elapsed = ((frameIdx * stftInterval) / sampleRate) * 1000;
+
         const voicingCoeff = newVoicingCoeffs[i];
         voicingCoeffsHistory.push(voicingCoeff);
 
